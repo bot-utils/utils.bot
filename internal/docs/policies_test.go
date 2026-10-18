@@ -61,7 +61,7 @@ func TestContractNoticeAndIllinoisPoliciesMatchHumanAndAgentRepresentations(t *t
 		for _, required := range []string{
 			"Terms version " + protocol.TermsVersion,
 			"Submitting a PDF with payment authorization indicates",
-			"A successfully parsed blank PDF is chargeable",
+			"successfully parsed blank or image-only PDF",
 			"Illinois Personal Information Protection Act",
 			"immediately following discovery",
 			"Illinois Attorney General",
@@ -174,6 +174,35 @@ func TestPDFAuthorizationTimeBudgetIsDisclosedPerOperation(t *testing.T) {
 			if !strings.Contains(w.Body.String(), notice) {
 				t.Fatalf("%s lacks %q", path, notice)
 			}
+		}
+	}
+}
+
+func TestTermsCoverToolsAndURLSourceBehaviorWithoutAdvertisingAnUnreleasedRoute(t *testing.T) {
+	h := New("https://utils.bot/v1/pdf/text")
+	for _, path := range []string{"/terms", "/openapi", "/openapi/json"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		for _, required := range []string{
+			"selected operation's", "login", "error page", "no identical fetched content",
+			"no JavaScript", "uncharged", "Mandatory", "no mandatory arbitration",
+		} {
+			if !strings.Contains(strings.ToLower(w.Body.String()), strings.ToLower(required)) {
+				t.Fatalf("%s omits generic tool terms: %s", path, required)
+			}
+		}
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/openapi/json", nil))
+	var spec struct {
+		Paths map[string]any `json:"paths"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &spec); err != nil {
+		t.Fatal(err)
+	}
+	for path := range spec.Paths {
+		if strings.Contains(path, "/html") || strings.Contains(path, "/url") || strings.Contains(path, "/ocr") || strings.Contains(path, "/csv") {
+			t.Fatal("unreleased tool advertised", path)
 		}
 	}
 }
