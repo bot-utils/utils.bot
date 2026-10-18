@@ -14,6 +14,8 @@ const RepositoryURL = "https://github.com/bot-utils/utils.bot"
 
 type About struct {
 	Summary, Description, Message, Transparency string
+	Benefits                                    []string
+	Audience                                    string
 }
 
 // Markdown returns the original file unchanged, including its real line breaks.
@@ -28,7 +30,19 @@ func Details() About {
 	message, _ := cut(rest, "\n\n## Links\n\n")
 	_, transparency := cut(description, "\n\n## Transparency\n\n")
 	transparency, _ = cut(transparency, "\n\n")
-	return About{Summary: summary, Description: description, Message: message, Transparency: transparency}
+	_, benefits := cut(description, "\n\n## Why use utils.bot\n\n")
+	benefits, _ = cut(benefits, "\n\n## Who it helps\n\n")
+	_, audience := cut(description, "\n\n## Who it helps\n\n")
+	audience, _ = cut(audience, "\n\n## Our promise\n\n")
+	var items []string
+	for line := range strings.SplitSeq(benefits, "\n") {
+		item, ok := strings.CutPrefix(line, "- ")
+		if !ok || item == "" {
+			panic("invalid embedded readme.md benefits")
+		}
+		items = append(items, item)
+	}
+	return About{Summary: summary, Description: description, Message: message, Transparency: transparency, Benefits: items, Audience: audience}
 }
 
 func cut(text, delimiter string) (string, string) {

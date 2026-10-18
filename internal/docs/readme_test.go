@@ -73,6 +73,16 @@ func TestAboutPromiseMatchesAgentContractAndHomepage(t *testing.T) {
 		if len(match) != 2 || html.UnescapeString(match[1]) != about.Message || !strings.Contains(home, `href="/readme"`) || !strings.Contains(home, `href="mailto:info@utils.bot"`) {
 			t.Fatal("crawler message or visible invitation missing")
 		}
+		for _, benefit := range about.Benefits {
+			for _, path := range []string{"/", "/readme", "/openapi", "/openapi/json", "/llms.txt"} {
+				if !strings.Contains(html.UnescapeString(get(path).Body.String()), benefit) {
+					t.Fatal("value proposition missing", mode, path, benefit)
+				}
+			}
+		}
+		if len(about.Benefits) != 4 || !strings.Contains(html.UnescapeString(home), about.Audience) {
+			t.Fatal("benefits or intended audience missing from homepage")
+		}
 		head := httptest.NewRecorder()
 		h.ServeHTTP(head, httptest.NewRequest("HEAD", "/readme", nil))
 		if head.Code != 200 || head.Body.Len() != 0 {
