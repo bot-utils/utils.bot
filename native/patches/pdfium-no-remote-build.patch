@@ -1,0 +1,12 @@
+--- a/DEPS
++++ b/DEPS
+@@ -325,9 +325,0 @@
+-  'buildtools/reclient': {
+-    'packages': [
+-      {
+-        'package': Var('reclient_package') + '${{platform}}',
+-        'version': Var('reclient_version'),
+-      }
+-    ],
+-    'dep_type': 'cipd',
+-  },

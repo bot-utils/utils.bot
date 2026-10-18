@@ -1,0 +1,139 @@
+--- a/core/fpdfapi/page/cpdf_dib.cpp
++++ b/core/fpdfapi/page/cpdf_dib.cpp
+@@ -33,7 +33,6 @@
+ #include "core/fxcodec/basic/basicmodule.h"
+ #include "core/fxcodec/fx_codec.h"
+ #include "core/fxcodec/icc/icc_transform.h"
+-#include "core/fxcodec/jbig2/jbig2_decoder.h"
+ #include "core/fxcodec/jpeg/jpegmodule.h"
+ #include "core/fxcodec/jpx/cjpx_decoder.h"
+ #include "core/fxcodec/scanlinedecoder.h"
+@@ -266,76 +265,10 @@
+   }
+ 
+   ByteString decoder = stream_acc_->GetImageDecoder();
+-  if (decoder == "JPXDecode") {
++  if (decoder == "JPXDecode" || decoder == "JBIG2Decode") {
+     return LoadState::kFail;
+   }
+-
+-  if (decoder != "JBIG2Decode") {
+-    return LoadState::kSuccess;
+-  }
+-
+-  if (status_ == LoadState::kFail) {
+-    return LoadState::kFail;
+-  }
+-
+-  FXCODEC_STATUS iDecodeStatus;
+-  if (!jbig_2context_) {
+-    jbig_2context_ = std::make_unique<Jbig2Context>();
+-    if (stream_acc_->GetImageParam()) {
+-      RetainPtr<const CPDF_Stream> pGlobals =
+-          stream_acc_->GetImageParam()->GetStreamFor("JBIG2Globals");
+-      if (pGlobals) {
+-        global_acc_ = pdfium::MakeRetain<CPDF_StreamAcc>(std::move(pGlobals));
+-        global_acc_->LoadAllDataFiltered();
+-      }
+-    }
+-    uint64_t nSrcKey = 0;
+-    pdfium::span<const uint8_t> pSrcSpan;
+-    if (stream_acc_) {
+-      pSrcSpan = stream_acc_->GetSpan();
+-      nSrcKey = stream_acc_->KeyForCache();
+-    }
+-    uint64_t nGlobalKey = 0;
+-    pdfium::span<const uint8_t> pGlobalSpan;
+-    if (global_acc_) {
+-      pGlobalSpan = global_acc_->GetSpan();
+-      nGlobalKey = global_acc_->KeyForCache();
+-    }
+-    const bool reject_large_regions_when_fuzzing = false;
+-    iDecodeStatus = Jbig2Decoder::StartDecode(
+-        jbig_2context_.get(), document_->GetOrCreateCodecContext(), GetWidth(),
+-        GetHeight(), pSrcSpan, nSrcKey, pGlobalSpan, nGlobalKey,
+-        cached_bitmap_->GetWritableBuffer(), cached_bitmap_->GetPitch(), pPause,
+-        reject_large_regions_when_fuzzing);
+-  } else {
+-    iDecodeStatus = Jbig2Decoder::ContinueDecode(jbig_2context_.get(), pPause);
+-  }
+-
+-  if (iDecodeStatus == FXCODEC_STATUS::kError) {
+-    jbig_2context_.reset();
+-    cached_bitmap_.Reset();
+-    global_acc_.Reset();
+-    return LoadState::kFail;
+-  }
+-  if (iDecodeStatus == FXCODEC_STATUS::kDecodeToBeContinued) {
+-    return LoadState::kContinue;
+-  }
+-
+-  LoadState iContinueStatus = LoadState::kSuccess;
+-  if (has_mask_) {
+-    if (ContinueLoadMaskDIB(pPause) == LoadState::kContinue) {
+-      iContinueStatus = LoadState::kContinue;
+-      status_ = LoadState::kContinue;
+-    }
+-  }
+-  if (iContinueStatus == LoadState::kContinue) {
+-    return LoadState::kContinue;
+-  }
+-
+-  if (color_space_ && std_cs_) {
+-    color_space_->EnableStdConversion(false);
+-  }
+-  return iContinueStatus;
++  return LoadState::kSuccess;
+ }
+ 
+ bool CPDF_DIB::LoadColorInfo(const CPDF_Dictionary* pFormResources,
+@@ -483,21 +416,15 @@
+     return LoadState::kFail;
+   }
+ 
++  // This service extracts embedded text and does not render raster content.
++  // Reject JPEG 2000 and JBIG2 before invoking the bundled decoders so hostile
++  // raster streams cannot consume the worker's CPU or memory budget.
+   if (decoder == "JPXDecode") {
+-    cached_bitmap_ = LoadJpxBitmap(resolution_levels_to_skip);
+-    return cached_bitmap_ ? LoadState::kSuccess : LoadState::kFail;
++    return LoadState::kFail;
+   }
+ 
+   if (decoder == "JBIG2Decode") {
+-    cached_bitmap_ = pdfium::MakeRetain<CFX_DIBitmap>();
+-    if (!cached_bitmap_->Create(
+-            GetWidth(), GetHeight(),
+-            image_mask_ ? FXDIB_Format::k1bppMask : FXDIB_Format::k1bppRgb)) {
+-      cached_bitmap_.Reset();
+-      return LoadState::kFail;
+-    }
+-    status_ = LoadState::kSuccess;
+-    return LoadState::kContinue;
++    return LoadState::kFail;
+   }
+ 
+   pdfium::span<const uint8_t> src_span = stream_acc_->GetSpan();
+--- a/core/fpdfapi/page/cpdf_dib.h
++++ b/core/fpdfapi/page/cpdf_dib.h
+@@ -32,7 +32,6 @@
+ };
+ 
+ namespace fxcodec {
+-class Jbig2Context;
+ class ScanlineDecoder;
+ }  // namespace fxcodec
+ 
+@@ -145,12 +144,10 @@
+   RetainPtr<CFX_DIBitmap> cached_bitmap_;
+   // Note: Must not create a cycle between CPDF_DIB instances.
+   RetainPtr<CPDF_DIB> mask_;
+-  RetainPtr<CPDF_StreamAcc> global_acc_;
+   std::unique_ptr<fxcodec::ScanlineDecoder> decoder_;
+   JpxSMaskInlineData jpx_inline_data_;
+ 
+   // Must come after |cached_bitmap_|.
+-  std::unique_ptr<fxcodec::Jbig2Context> jbig_2context_;
+ };
+ 
+ #endif  // CORE_FPDFAPI_PAGE_CPDF_DIB_H_

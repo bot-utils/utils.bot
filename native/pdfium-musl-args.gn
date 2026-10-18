@@ -1,0 +1,25 @@
+is_debug = false
+is_component_build = false
+pdf_is_complete_lib = true
+pdf_is_standalone = true
+pdf_enable_v8 = false
+pdf_enable_xfa = false
+pdf_enable_fontations = false
+pdf_use_skia = false
+pdf_use_partition_alloc = false
+target_cpu = "arm64"
+target_os = "linux"
+use_sysroot = false
+use_custom_libcxx = false
+clang_use_chrome_plugins = false
+enable_rust = false
+symbol_level = 0
+treat_warnings_as_errors = false
+use_remoteexec = false
+use_glib = false
+is_clang = true
+use_lld = true
+
+clang_base_path = "/usr/lib/llvm22"
+clang_version = "22"
+custom_toolchain = "//build/toolchain/linux/local_musl:arm64"

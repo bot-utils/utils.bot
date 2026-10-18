@@ -1,0 +1,9 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": "s3:PutObject",
+    "Resource": "arn:aws:s3:::${STATIC_SITE_BUCKET}/public/*",
+    "Condition": {"StringEquals": {"s3:x-amz-server-side-encryption": "AES256"}}
+  }]
+}

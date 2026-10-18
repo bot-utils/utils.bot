@@ -1,0 +1,777 @@
+{
+  "findings": [
+    {
+      "cve": "CVE-2026-42250",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "FreeType bzip2 support is disabled and the library is absent from the runtime closure.",
+      "package": "libbz2-1.0",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-42250",
+      "severity": "MEDIUM",
+      "title": "bzip2: bzip2: Denial of Service in bzip2recover via a specially crafted file",
+      "version": "1.0.8-6"
+    },
+    {
+      "affectedInterface": "glob/glob64",
+      "cve": "CVE-2010-4756",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2010-4756",
+      "severity": "LOW",
+      "title": "glibc: glob implementation can cause excessive CPU and memory consumption due to crafted glob expressions",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "regexec",
+      "cve": "CVE-2018-20796",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2018-20796",
+      "severity": "LOW",
+      "title": "glibc: uncontrolled recursion in function check_dst_limits_calc_pos_1 in posix/regexec.c",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "stack-guard mitigation",
+      "cve": "CVE-2019-1010022",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "unfixed_mitigation_weakness",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2019-1010022",
+      "severity": "LOW",
+      "title": "glibc: stack guard protection bypass",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "ldd tool",
+      "cve": "CVE-2019-1010023",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_applicable_runtime_tool_absent",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2019-1010023",
+      "severity": "LOW",
+      "title": "glibc: running ldd on malicious ELF leads to code execution because of wrong size computation",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "thread-stack cache ASLR mitigation",
+      "cve": "CVE-2019-1010024",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "unfixed_mitigation_weakness",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2019-1010024",
+      "severity": "LOW",
+      "title": "glibc: ASLR bypass using cache of thread stack and heap",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "thread-stack address disclosure mitigation",
+      "cve": "CVE-2019-1010025",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "unfixed_mitigation_weakness",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2019-1010025",
+      "severity": "LOW",
+      "title": "glibc: information disclosure of heap addresses of pthread_created thread",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "regexec",
+      "cve": "CVE-2019-9192",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2019-9192",
+      "severity": "LOW",
+      "title": "glibc: uncontrolled recursion in function check_dst_limits_calc_pos_1 in posix/regexec.c",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "fopen mode parser",
+      "cve": "CVE-2026-18374",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-18374",
+      "severity": "MEDIUM",
+      "title": "glibc: glibc: Heap buffer overflow via attacker-controlled fopen mode string",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "strfmon",
+      "cve": "CVE-2026-19499",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-19499",
+      "severity": "MEDIUM",
+      "title": "glibc: Buffer Overflow in strfmon right-justification padding",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "tdelete",
+      "cve": "CVE-2026-19542",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-19542",
+      "severity": "MEDIUM",
+      "title": "glibc: Fix out-of-bounds array write in tdelete",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "ns_sprintrr deprecated DNS formatter",
+      "cve": "CVE-2026-5435",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-5435",
+      "severity": "MEDIUM",
+      "title": "glibc: glibc: Out-of-bounds write via TSIG record processing",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "ns_name_unpack deprecated DNS formatter",
+      "cve": "CVE-2026-6238",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-6238",
+      "severity": "MEDIUM",
+      "title": "glibc: glibc: Application crash or uninitialized memory read via crafted DNS response",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "wordexp",
+      "cve": "CVE-2026-6368",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-6368",
+      "severity": "MEDIUM",
+      "title": "glibc: glibc: Process abort due to invalid memory in wordexp",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "wordexp tilde expansion",
+      "cve": "CVE-2026-6791",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-6791",
+      "severity": "MEDIUM",
+      "title": "glibc: Glibc: Denial of Service via stack exhaustion during tilde expansion",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "SHIFT_JISX0213 gconv module",
+      "cve": "CVE-2026-77117",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-77117",
+      "severity": "MEDIUM",
+      "title": "glibc: Non-progress DoS in SHIFT_JISX0213 -&gt",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "EUC_JISX0213 gconv module",
+      "cve": "CVE-2026-80489",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-80489",
+      "severity": "MEDIUM",
+      "title": "glibc: Non-progress DoS in EUC_JISX0213 -> UCS-4 conversion state",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "DNS resolver search-list initialization",
+      "cve": "CVE-2026-8674",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-8674",
+      "severity": "MEDIUM",
+      "title": "glibc: glibc DNS stub resolver: Denial of Service via long search domain in configuration",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "AT_SECURE dynamic loader",
+      "cve": "CVE-2026-86805",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-86805",
+      "severity": "MEDIUM",
+      "title": "glibc: glibc: Privilege escalation and arbitrary code execution via TOCTOU race condition in dynamic loader",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "nscd daemon",
+      "cve": "CVE-2026-89092",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-89092",
+      "severity": "MEDIUM",
+      "title": "glibc: nscd stack overflow leads to degraded DNS resolution",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "AT_SECURE dynamic loader",
+      "cve": "CVE-2026-95818",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-95818",
+      "severity": "MEDIUM",
+      "title": "glibc: glibc: Local attacker can cause denial of service and information disclosure via stack-based buffer overflow.",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "Power8 strncasecmp implementation",
+      "cve": "CVE-2026-97399",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libc6",
+      "previousDisposition": "not_reachable_from_untrusted_document_path",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-97399",
+      "severity": "LOW",
+      "title": "glibc: glibc: Denial of Service via out-of-bounds read in strncasecmp",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "affectedInterface": "GNU PBDS binary_heap erase_if header template",
+      "cve": "CVE-2026-102010",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libgcc-s1",
+      "previousDisposition": "package_scanner_overmatch_not_in_shipped_code",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-102010",
+      "severity": "MEDIUM",
+      "title": "gcc-toolset-15-gcc: gcc: gcc-toolset-16: gcc: Denial of Service via use-after-free in binary heap erase_if",
+      "version": "14.2.0-19"
+    },
+    {
+      "affectedInterface": "libstdc++ aligned allocation fallback",
+      "cve": "CVE-2026-95619",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libgcc-s1",
+      "previousDisposition": "package_scanner_overmatch_not_in_shipped_code",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-95619",
+      "severity": "MEDIUM",
+      "title": "gcc: libstdc++ integer overflow in `new` operator",
+      "version": "14.2.0-19"
+    },
+    {
+      "cve": "CVE-2016-10505",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py",
+        "native/patches/pdfium-disable-raster-codecs.patch",
+        "native/pdfium-provenance.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "Poppler codec and Debian library removed; PDFium rejects JPX before its static codec and the final-link marker regression proves OpenJPEG code is absent.",
+      "package": "libopenjp2-7",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2016-10505",
+      "severity": "LOW",
+      "title": "openjpeg: NULL pointer dereference in imagetopnm function in convert.c",
+      "version": "2.5.3-2.1~deb13u2"
+    },
+    {
+      "cve": "CVE-2016-9113",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py",
+        "native/patches/pdfium-disable-raster-codecs.patch",
+        "native/pdfium-provenance.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "Poppler codec and Debian library removed; PDFium rejects JPX before its static codec and the final-link marker regression proves OpenJPEG code is absent.",
+      "package": "libopenjp2-7",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2016-9113",
+      "severity": "LOW",
+      "title": "openjpeg2: Multiple security issues",
+      "version": "2.5.3-2.1~deb13u2"
+    },
+    {
+      "cve": "CVE-2016-9114",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py",
+        "native/patches/pdfium-disable-raster-codecs.patch",
+        "native/pdfium-provenance.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "Poppler codec and Debian library removed; PDFium rejects JPX before its static codec and the final-link marker regression proves OpenJPEG code is absent.",
+      "package": "libopenjp2-7",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2016-9114",
+      "severity": "LOW",
+      "title": "openjpeg2: Multiple security issues",
+      "version": "2.5.3-2.1~deb13u2"
+    },
+    {
+      "cve": "CVE-2016-9115",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py",
+        "native/patches/pdfium-disable-raster-codecs.patch",
+        "native/pdfium-provenance.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "Poppler codec and Debian library removed; PDFium rejects JPX before its static codec and the final-link marker regression proves OpenJPEG code is absent.",
+      "package": "libopenjp2-7",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2016-9115",
+      "severity": "LOW",
+      "title": "openjpeg2: Multiple security issues",
+      "version": "2.5.3-2.1~deb13u2"
+    },
+    {
+      "cve": "CVE-2016-9116",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py",
+        "native/patches/pdfium-disable-raster-codecs.patch",
+        "native/pdfium-provenance.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "Poppler codec and Debian library removed; PDFium rejects JPX before its static codec and the final-link marker regression proves OpenJPEG code is absent.",
+      "package": "libopenjp2-7",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2016-9116",
+      "severity": "LOW",
+      "title": "openjpeg2: Multiple security issues",
+      "version": "2.5.3-2.1~deb13u2"
+    },
+    {
+      "cve": "CVE-2016-9117",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py",
+        "native/patches/pdfium-disable-raster-codecs.patch",
+        "native/pdfium-provenance.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "Poppler codec and Debian library removed; PDFium rejects JPX before its static codec and the final-link marker regression proves OpenJPEG code is absent.",
+      "package": "libopenjp2-7",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2016-9117",
+      "severity": "LOW",
+      "title": "openjpeg2: Multiple security issues",
+      "version": "2.5.3-2.1~deb13u2"
+    },
+    {
+      "cve": "CVE-2016-9580",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py",
+        "native/patches/pdfium-disable-raster-codecs.patch",
+        "native/pdfium-provenance.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "Poppler codec and Debian library removed; PDFium rejects JPX before its static codec and the final-link marker regression proves OpenJPEG code is absent.",
+      "package": "libopenjp2-7",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2016-9580",
+      "severity": "LOW",
+      "title": "openjpeg2: Integer overflow in tiftoimage causes heap buffer overflow",
+      "version": "2.5.3-2.1~deb13u2"
+    },
+    {
+      "cve": "CVE-2016-9581",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py",
+        "native/patches/pdfium-disable-raster-codecs.patch",
+        "native/pdfium-provenance.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "Poppler codec and Debian library removed; PDFium rejects JPX before its static codec and the final-link marker regression proves OpenJPEG code is absent.",
+      "package": "libopenjp2-7",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2016-9581",
+      "severity": "LOW",
+      "title": "openjpeg2: Infinite loop in tiftoimage resulting into heap buffer overflow in convert_32s_C1P1",
+      "version": "2.5.3-2.1~deb13u2"
+    },
+    {
+      "cve": "CVE-2018-16376",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py",
+        "native/patches/pdfium-disable-raster-codecs.patch",
+        "native/pdfium-provenance.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "Poppler codec and Debian library removed; PDFium rejects JPX before its static codec and the final-link marker regression proves OpenJPEG code is absent.",
+      "package": "libopenjp2-7",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2018-16376",
+      "severity": "LOW",
+      "title": "openjpeg: Heap-based buffer overflow in function t2_encode_packet in src/lib/openmj2/t2.c",
+      "version": "2.5.3-2.1~deb13u2"
+    },
+    {
+      "cve": "CVE-2019-6988",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py",
+        "native/patches/pdfium-disable-raster-codecs.patch",
+        "native/pdfium-provenance.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "Poppler codec and Debian library removed; PDFium rejects JPX before its static codec and the final-link marker regression proves OpenJPEG code is absent.",
+      "package": "libopenjp2-7",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2019-6988",
+      "severity": "LOW",
+      "title": "openjpeg: DoS via memory exhaustion in opj_decompress",
+      "version": "2.5.3-2.1~deb13u2"
+    },
+    {
+      "cve": "CVE-2023-39327",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py",
+        "native/patches/pdfium-disable-raster-codecs.patch",
+        "native/pdfium-provenance.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "Poppler codec and Debian library removed; PDFium rejects JPX before its static codec and the final-link marker regression proves OpenJPEG code is absent.",
+      "package": "libopenjp2-7",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2023-39327",
+      "severity": "LOW",
+      "title": "openjpeg: Malicious files can cause the program to enter a large loop",
+      "version": "2.5.3-2.1~deb13u2"
+    },
+    {
+      "cve": "CVE-2023-39328",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py",
+        "native/patches/pdfium-disable-raster-codecs.patch",
+        "native/pdfium-provenance.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "Poppler codec and Debian library removed; PDFium rejects JPX before its static codec and the final-link marker regression proves OpenJPEG code is absent.",
+      "package": "libopenjp2-7",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2023-39328",
+      "severity": "MEDIUM",
+      "title": "openjpeg: denail of service via crafted image file",
+      "version": "2.5.3-2.1~deb13u2"
+    },
+    {
+      "cve": "CVE-2023-39329",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py",
+        "native/patches/pdfium-disable-raster-codecs.patch",
+        "native/pdfium-provenance.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "Poppler codec and Debian library removed; PDFium rejects JPX before its static codec and the final-link marker regression proves OpenJPEG code is absent.",
+      "package": "libopenjp2-7",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2023-39329",
+      "severity": "MEDIUM",
+      "title": "openjpeg: Resource exhaustion will occur in the opj_t1_decode_cblks function in the tcd.c",
+      "version": "2.5.3-2.1~deb13u2"
+    },
+    {
+      "cve": "CVE-2021-4214",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "Poppler and FreeType PNG support are disabled and the library is absent from the runtime closure.",
+      "package": "libpng16-16t64",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2021-4214",
+      "severity": "LOW",
+      "title": "libpng: hardcoded value leads to heap-overflow",
+      "version": "1.6.48-1+deb13u6"
+    },
+    {
+      "cve": "CVE-2026-3713",
+      "disposition": "removed_from_runtime",
+      "evidence": [
+        "Dockerfile",
+        "internal/parser/integration_test.go",
+        "scripts/runtime-rootfs.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "Poppler and FreeType PNG support are disabled and the library is absent from the runtime closure.",
+      "package": "libpng16-16t64",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-3713",
+      "severity": "LOW",
+      "title": "libpng: libpng: Heap-based buffer overflow in pnm2png allows information disclosure and denial of service",
+      "version": "1.6.48-1+deb13u6"
+    },
+    {
+      "affectedInterface": "GNU PBDS binary_heap erase_if header template",
+      "cve": "CVE-2026-102010",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libstdc++6",
+      "previousDisposition": "package_scanner_overmatch_not_in_shipped_code",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-102010",
+      "severity": "MEDIUM",
+      "title": "gcc-toolset-15-gcc: gcc: gcc-toolset-16: gcc: Denial of Service via use-after-free in binary heap erase_if",
+      "version": "14.2.0-19"
+    },
+    {
+      "affectedInterface": "libstdc++ aligned allocation fallback",
+      "cve": "CVE-2026-95619",
+      "disposition": "removed_with_gnu_runtime",
+      "evidence": [
+        "Dockerfile",
+        "scripts/runtime-rootfs.py",
+        "internal/parser/integration_test.go",
+        "scripts/check-runtime-scan.py"
+      ],
+      "expectedInNextScan": false,
+      "note": "GNU libc/libgcc/libstdc++ are absent. Native parsers now use musl and LLVM libc++; exact runtime closure, package inventory and loader/compatibility regressions enforce this.",
+      "package": "libstdc++6",
+      "previousDisposition": "package_scanner_overmatch_not_in_shipped_code",
+      "primarySource": "https://security-tracker.debian.org/tracker/CVE-2026-95619",
+      "severity": "MEDIUM",
+      "title": "gcc: libstdc++ integer overflow in `new` operator",
+      "version": "14.2.0-19"
+    }
+  ],
+  "policy": "Historical remediation ledger only, never an allowlist. The release gate requires complete actual Alpine/Go inventory and zero reported vulnerabilities of every severity.",
+  "remediationCandidate": {
+    "deployed": true,
+    "finalState": "reports/native-musl-final-state.json",
+    "image": "agent-pdf:musl-release-runtime",
+    "publishedImageDigest": "sha256:1676d03b62801f05bb8b629530efce9f337d42cbeadbccc3227a75175a580521",
+    "rawScan": "build/native-musl/release-scan/runtime-scan.json",
+    "reportedFindings": 0
+  },
+  "reviewedScan": {
+    "artifactID": "sha256:7764cbd9ec0d3e72fc14ebcd4227107af6893d8aca81c2e50d9aa63be8b3199b",
+    "createdAt": "2026-10-17T19:55:19.917658932Z",
+    "findingCount": 41,
+    "scanner": "Trivy 0.75.0"
+  },
+  "schemaVersion": 2
+}

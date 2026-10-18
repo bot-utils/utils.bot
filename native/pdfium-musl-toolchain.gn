@@ -1,0 +1,17 @@
+import("//build/toolchain/gcc_toolchain.gni")
+gcc_toolchain("arm64") {
+ cc = "clang"
+ cxx = "clang++"
+ readelf = "readelf"
+ nm = "nm"
+ ar = "ar"
+ ld = cxx
+ extra_cxxflags = "-stdlib=libc++"
+ extra_ldflags = "-stdlib=libc++ -fuse-ld=lld"
+ toolchain_args = {
+  current_cpu = "arm64"
+  current_os = "linux"
+  is_clang = true
+  use_remoteexec = false
+ }
+}

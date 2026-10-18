@@ -1,0 +1,65 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "wafv2:CreateWebACL",
+        "wafv2:UpdateWebACL",
+        "wafv2:DeleteWebACL",
+        "wafv2:GetWebACL",
+        "wafv2:TagResource",
+        "wafv2:UntagResource",
+        "wafv2:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:wafv2:us-east-2:${AWS_ACCOUNT_ID}:regional/webacl/agent-pdf-mock/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "wafv2:AssociateWebACL",
+        "wafv2:DisassociateWebACL"
+      ],
+      "Resource": [
+        "arn:aws:wafv2:us-east-2:${AWS_ACCOUNT_ID}:regional/webacl/agent-pdf-mock/*",
+        "arn:aws:elasticloadbalancing:us-east-2:${AWS_ACCOUNT_ID}:loadbalancer/app/agent-pdf-mock/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": "wafv2:GetWebACLForResource",
+      "Resource": "arn:aws:wafv2:us-east-2:${AWS_ACCOUNT_ID}:regional/webacl/*/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:CreateWebACLAssociation",
+        "elasticloadbalancing:DeleteWebACLAssociation",
+        "elasticloadbalancing:GetLoadBalancerWebACL"
+      ],
+      "Resource": "arn:aws:elasticloadbalancing:us-east-2:${AWS_ACCOUNT_ID}:loadbalancer/app/agent-pdf-mock/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "elasticloadbalancing:SetWebAcl",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "us-east-2"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:PutMetricAlarm",
+        "cloudwatch:DeleteAlarms",
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:TagResource",
+        "cloudwatch:UntagResource",
+        "cloudwatch:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:cloudwatch:us-east-2:${AWS_ACCOUNT_ID}:alarm:agent-pdf-*"
+    }
+  ]
+}

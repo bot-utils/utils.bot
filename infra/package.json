@@ -1,0 +1,1 @@
+{"name":"agent-pdf-deployment","private":true,"scripts":{"cdk":"cdk","build:lambda":"../scripts/build-lambda.sh"},"devDependencies":{"aws-cdk":"2.1143.0"}}
