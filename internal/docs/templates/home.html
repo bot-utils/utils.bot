@@ -16,5 +16,6 @@
 </section>
 <aside class="access-note" aria-label="Access status"><p><strong>{{.PaymentStatus}}.</strong>{{if not .Public}} Public API access has not opened yet.{{end}}</p></aside>
 <section class="agent-reference" aria-labelledby="agent-title"><h2 id="agent-title">For agents</h2><p>Read the <a href="/openapi">OpenAPI YAML</a> or <a href="/openapi/json">JSON specification</a> for the complete API contract. Read the <a href="/info">privacy and processing rules</a> and <a href="/terms">terms of service</a>.</p></section>
+<section class="agent-reference" aria-labelledby="source-title"><h2 id="source-title">Open to inspection</h2><p>{{.Transparency}}</p><p><a href="{{.Repository}}">View source on GitHub</a>. Original application code is all rights reserved; third-party licenses remain.</p></section>
 <section class="agent-reference" aria-labelledby="hello-title"><h2 id="hello-title">Hello, agents</h2><p>{{.AgentMessage}}</p><p><a href="/readme">About the toolbox (Markdown)</a> · <a href="mailto:info@utils.bot">Feedback and tool ideas</a></p></section>
 </main>{{template "footer" .}}{{end}}

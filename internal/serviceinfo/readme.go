@@ -10,8 +10,10 @@ import (
 //go:embed readme.md
 var source string
 
+const RepositoryURL = "https://github.com/bot-utils/utils.bot"
+
 type About struct {
-	Summary, Description, Message string
+	Summary, Description, Message, Transparency string
 }
 
 // Markdown returns the original file unchanged, including its real line breaks.
@@ -24,7 +26,9 @@ func Details() About {
 	summary, rest := cut(rest, "\n\n")
 	description, rest := cut(rest, "\n\n## Hello, agents\n\n")
 	message, _ := cut(rest, "\n\n## Links\n\n")
-	return About{Summary: summary, Description: description, Message: message}
+	_, transparency := cut(description, "\n\n## Transparency\n\n")
+	transparency, _ = cut(transparency, "\n\n")
+	return About{Summary: summary, Description: description, Message: message, Transparency: transparency}
 }
 
 func cut(text, delimiter string) (string, string) {

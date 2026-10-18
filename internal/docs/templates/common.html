@@ -6,6 +6,7 @@
 <link rel="canonical" href="{{.Canonical}}"><link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <link rel="service-desc" href="/openapi" type="application/yaml" title="OpenAPI specification">
 <link rel="alternate" href="/openapi/json" type="application/json" title="OpenAPI JSON">
+<link rel="related" href="{{.Repository}}" title="Source code on GitHub">
 <meta property="og:type" content="website"><meta property="og:site_name" content="utils.bot"><meta property="og:title" content="{{.Title}}"><meta property="og:description" content="{{.Description}}"><meta property="og:url" content="{{.Canonical}}">
 <meta name="copyright" content="Copyright 2026 utils.bot. Third-party license rights are preserved.">
 <link rel="stylesheet" href="/assets/site-v5.css">
@@ -13,4 +14,4 @@
 {{if .Structured}}<script type="application/ld+json">{{.Structured}}</script>{{end}}
 </head><body><a class="skip" href="#main">Skip to content</a>
 <header><p class="wordmark"><a href="/" aria-label="utils.bot home">utils.bot</a></p><nav aria-label="Main navigation"><a href="/#tools">Tools</a> · <a href="/docs">API reference</a> · <a href="/info">Information</a></nav></header>{{end}}
-{{define "footer"}}<footer><nav aria-label="Footer navigation"><a href="/docs">Swagger UI</a> · <a href="/openapi">OpenAPI</a> · <a href="/openapi/json">JSON</a> · <a href="/info">Privacy</a> · <a href="/terms">Terms</a></nav><p>Copyright © 2026 utils.bot. <a href="/terms">Copyright and licenses</a> · <a href="/assets/SWAGGER-UI-LICENSE">Swagger UI license</a> · <a href="/assets/SWAGGER-UI-NOTICE">Notice</a> · <a href="/assets/swagger-ui-bundle.js.LICENSE.txt">Bundled notices</a>.</p></footer></body></html>{{end}}
+{{define "footer"}}<footer><nav aria-label="Footer navigation"><a href="/docs">Swagger UI</a> · <a href="/openapi">OpenAPI</a> · <a href="/openapi/json">JSON</a> · <a href="/info">Privacy</a> · <a href="/terms">Terms</a> · <a href="{{.Repository}}">Source on GitHub</a></nav><p>Copyright © 2026 utils.bot. <a href="/terms">Copyright and licenses</a> · <a href="/assets/SWAGGER-UI-LICENSE">Swagger UI license</a> · <a href="/assets/SWAGGER-UI-NOTICE">Notice</a> · <a href="/assets/swagger-ui-bundle.js.LICENSE.txt">Bundled notices</a>.</p></footer></body></html>{{end}}
