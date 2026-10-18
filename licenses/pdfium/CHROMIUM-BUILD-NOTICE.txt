@@ -1,0 +1,30 @@
+Attribution for native/patches/pdfium-musl-build.patch
+Chromium build revision pinned by PDFium DEPS: ebdaeefa62db7c40f27cacb0eb034db3a5cdb849
+
+config/clang/BUILD.gn
+https://chromium.googlesource.com/chromium/src/build/+/ebdaeefa62db7c40f27cacb0eb034db3a5cdb849/config/clang/BUILD.gn
+
+# Copyright 2013 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+config/compiler/BUILD.gn
+https://chromium.googlesource.com/chromium/src/build/+/ebdaeefa62db7c40f27cacb0eb034db3a5cdb849/config/compiler/BUILD.gn
+
+# Copyright 2013 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+config/compiler_cpu_abi.gn
+https://chromium.googlesource.com/chromium/src/build/+/ebdaeefa62db7c40f27cacb0eb034db3a5cdb849/config/compiler_cpu_abi.gn
+
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+config/sanitizers/sanitizers.gni
+https://chromium.googlesource.com/chromium/src/build/+/ebdaeefa62db7c40f27cacb0eb034db3a5cdb849/config/sanitizers/sanitizers.gni
+
+# Copyright 2015 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.

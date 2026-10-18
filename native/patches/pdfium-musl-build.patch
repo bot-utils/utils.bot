@@ -1,0 +1,73 @@
+diff --git a/config/clang/BUILD.gn b/config/clang/BUILD.gn
+index 299504f..9073163 100644
+--- a/config/clang/BUILD.gn
++++ b/config/clang/BUILD.gn
+@@ -207,7 +207,8 @@ template("clang_lib") {
+         } else if (current_cpu == "arm") {
+           _dir = "armv7-unknown-linux-gnueabihf"
+         } else if (current_cpu == "arm64") {
+-          _dir = "aarch64-unknown-linux-gnu"
++          _dir = "aarch64-alpine-linux-musl"
++          _suffix = "-aarch64"
+         } else if (current_cpu == "loong64") {
+           _dir = "loongarch64-unknown-linux-gnu"
+         } else if (current_cpu == "riscv64") {
+diff --git a/config/compiler/BUILD.gn b/config/compiler/BUILD.gn
+index c106acf..04ec14e 100644
+--- a/config/compiler/BUILD.gn
++++ b/config/compiler/BUILD.gn
+@@ -590,7 +590,7 @@ config("compiler") {
+     cflags += [ "-fcolor-diagnostics" ]
+     if (!is_wasm) {
+       if (!is_win) {
+-        cflags += [ "-fdiagnostics-show-inlining-chain" ]
++        cflags += [ "" ]
+       } else {
+         # Combine after https://github.com/llvm/llvm-project/pull/192241
+         cflags += [ "/clang:-fdiagnostics-show-inlining-chain" ]
+@@ -630,7 +630,7 @@ config("compiler") {
+     # https://crbug.com/484082200 for background and https://crrev.com/c/7593035
+     # for discussion.
+     if (!is_wasm) {
+-      cflags += [ "-fno-lifetime-dse" ]
++      cflags += [ "" ]
+     }
+ 
+     # TODO(hans): Remove this once Clang generates better optimized debug info
+@@ -1790,7 +1790,7 @@ config("runtime_library") {
+   if (use_safe_libcxx) {
+     defines += [ "_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE" ]
+   } else {
+-    defines += [ "_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE" ]
++    defines += [ "_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE" ]
+   }
+ 
+   # Enable libstdc++ hardening lightweight assertions. Those have a low
+diff --git a/config/compiler_cpu_abi.gn b/config/compiler_cpu_abi.gn
+index ae62bab..668eab3 100644
+--- a/config/compiler_cpu_abi.gn
++++ b/config/compiler_cpu_abi.gn
+@@ -84,8 +84,8 @@ if ((is_posix && !is_apple) || is_fuchsia) {
+     ]
+   } else if (current_cpu == "arm64") {
+     if (is_clang && !is_android && !is_fuchsia && !is_chromeos_device) {
+-      cpu_abi_cflags += [ "--target=aarch64-linux-gnu" ]
+-      cpu_abi_ldflags += [ "--target=aarch64-linux-gnu" ]
++      cpu_abi_cflags += [ "--target=aarch64-alpine-linux-musl" ]
++      cpu_abi_ldflags += [ "--target=aarch64-alpine-linux-musl" ]
+     }
+     if (target_os == "chromeos" && cros_target_cpu_arch != "" &&
+         is_a_target_toolchain) {
+diff --git a/config/sanitizers/sanitizers.gni b/config/sanitizers/sanitizers.gni
+index d06cc29..1a0f932 100644
+--- a/config/sanitizers/sanitizers.gni
++++ b/config/sanitizers/sanitizers.gni
+@@ -541,7 +541,7 @@ template("ubsan_hardening") {
+         # be usable even in release builds, i.e. as widely as possible.
+         # It's important not to have full-on UBSan workarounds activate
+         # just because we built support for a specific sanitizer.
+-        "-fsanitize-ignore-for-ubsan-feature=${invoker.sanitizer}",
++        "",
+       ]
+       if (defined(invoker.cflags)) {
+         cflags += invoker.cflags

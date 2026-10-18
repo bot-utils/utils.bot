@@ -1,0 +1,141 @@
+package telemetry
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"log/slog"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+func TestTraceRejectsUntrustedContent(t *testing.T) {
+	ctx := WithTrace(context.Background(), NewTrace())
+	if len(Trace(ctx)) != 32 {
+		t.Fatal("missing random correlation")
+	}
+	for _, input := range []string{"wallet-secret", strings.Repeat("z", 32), strings.Repeat("a", 33), "\n" + strings.Repeat("a", 31)} {
+		if Trace(WithTrace(context.Background(), input)) != "" {
+			t.Fatal("untrusted trace accepted")
+		}
+	}
+}
+
+func TestHTTPTransportDiagnosticsNeverRetainRequesterData(t *testing.T) {
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	defer slog.SetDefault(previous)
+	// Other tests may have consumed the shared minute's diagnostic allowance;
+	// advancing its previous window keeps this test independent of order.
+	details.mu.Lock()
+	details.start = time.Now().Add(-2 * time.Minute)
+	details.mu.Unlock()
+	p := []byte("http: panic serving 198.51.100.42:12345: private PDF and payment data\nstack")
+	for range 10 {
+		if n, err := (HTTPErrorWriter{}).Write(p); n != len(p) || err != nil {
+			t.Fatal("transport log write failed", n, err)
+		}
+	}
+	if strings.Contains(buf.String(), "198.51.100.42") || strings.Contains(buf.String(), "private PDF") || strings.Contains(buf.String(), "stack") || !strings.Contains(buf.String(), "http_transport_failure") || strings.Count(buf.String(), "\n") != 5 {
+		t.Fatal("raw HTTP diagnostics or uncapped volume retained", buf.String())
+	}
+}
+func TestLimiterCapsConcurrentDiagnosticVolume(t *testing.T) {
+	var limiter Limiter
+	now := time.Now()
+	var admitted atomic.Int32
+	var wg sync.WaitGroup
+	for range 100 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if limiter.Allow(now) {
+				admitted.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if admitted.Load() != 5 || limiter.Allow(now.Add(59*time.Second)) || !limiter.Allow(now.Add(time.Minute)) {
+		t.Fatal("diagnostic cap failed")
+	}
+}
+func TestSummaryPrivacyBoundsAndOutcomeClassification(t *testing.T) {
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	defer slog.SetDefault(previous)
+	ctx := WithTrace(context.Background(), NewTrace())
+	PaymentSummary(ctx, Payment{ProviderFailures: 1, Code: strings.Repeat("provider-secret", 10000)}, time.Now())
+	cases := []struct {
+		status                                       int
+		write, settled, fallback                     bool
+		completed, document, service, paid, capacity int
+	}{
+		{200, false, true, false, 1, 0, 0, 0, 0}, {422, false, true, true, 0, 1, 0, 0, 0}, {502, false, true, false, 0, 0, 1, 1, 0}, {200, true, true, false, 0, 0, 1, 1, 0}, {429, false, false, false, 0, 0, 0, 0, 1},
+	}
+	for _, tc := range cases {
+		RequestSummary(ctx, tc.status, tc.write, tc.settled, tc.fallback, time.Now())
+	}
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != len(cases)+1 {
+		t.Fatal("missing terminal summaries")
+	}
+	for i, line := range lines {
+		if len(line) > 1024 || strings.Contains(line, "provider-secret") {
+			t.Fatal("unbounded diagnostic or customer text")
+		}
+		var record map[string]any
+		if json.Unmarshal([]byte(line), &record) != nil {
+			t.Fatal("not JSON")
+		}
+		if i == 0 {
+			if record["code"] != "unknown" || record["provider_failures"] != float64(1) {
+				t.Fatal(record)
+			}
+			continue
+		}
+		tc := cases[i-1]
+		for key, want := range map[string]int{"completed": tc.completed, "document_failures": tc.document, "service_failures": tc.service, "paid_service_failures": tc.paid, "capacity_refusals": tc.capacity, "fallback_attempts": Count(tc.fallback)} {
+			if record[key] != float64(want) {
+				t.Fatalf("%s=%v want %d", key, record[key], want)
+			}
+		}
+	}
+	if Code("unpaid_compute_quota_exceeded") != "unpaid_compute_quota_exceeded" || Code("request_abandonment_quota_exceeded") != "request_abandonment_quota_exceeded" || Reason("signature containing arbitrary data") != "unknown" || Reason("billing_required") != "billing_required" {
+		t.Fatal("provider reason whitelist bypassed")
+	}
+}
+
+func TestLeanSummaryHasOnlyApprovedFieldsAndSanitizesCategories(t *testing.T) {
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	defer slog.SetDefault(previous)
+	r := Request{Stage: "PRIVATE request value", Code: "PRIVATE signature", PDFium: "PRIVATE PDF text", Poppler: "PRIVATE wallet"}
+	RequestDetailSummary(WithTrace(context.Background(), NewTrace()), 502, false, false, false, time.Now(), r)
+	var record map[string]any
+	if json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &record) != nil {
+		t.Fatal(buf.String())
+	}
+	allowed := map[string]bool{}
+	for _, key := range strings.Fields("time level msg telemetry role schema request_id status code stage elapsed_ms verify_ms upload_ms check_ms parse_ms prepare_ms settle_ms pdfium poppler requests completed document_failures service_failures paid_service_failures capacity_refusals fallback_attempts write_failed") {
+		allowed[key] = true
+	}
+	for key := range record {
+		if !allowed[key] {
+			t.Fatal("new log field requires privacy review", key)
+		}
+	}
+	if strings.Contains(buf.String(), "PRIVATE") || buf.Len() > 1536 {
+		t.Fatal("unbounded/customer data", buf.String())
+	}
+	for _, key := range []string{"stage", "code", "pdfium", "poppler"} {
+		if record[key] != "unknown" {
+			t.Fatal(key, record)
+		}
+	}
+}

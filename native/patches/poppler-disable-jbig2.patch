@@ -1,0 +1,39 @@
+--- a/poppler/Stream.cc
++++ b/poppler/Stream.cc
+@@ -69,7 +69,6 @@
+ #include "GfxState.h"
+ #include "Stream.h"
+ #include "XRef.h"
+-#include "JBIG2Stream.h"
+ #include "Stream-CCITT.h"
+ #include "CachedFile.h"
+ 
+@@ -388,13 +387,10 @@
+ #endif
+ 
+     } else if (name == "JBIG2Decode") {
+-        Object globals;
+-        if (params->isDict()) {
+-            XRef *xref = params->getDict()->getXRef();
+-            obj = params->dictLookupNF("JBIG2Globals").copy();
+-            globals = obj.fetch(xref, recursion);
+-        }
+-        str = std::make_unique<JBIG2Stream>(std::move(str), std::move(globals), &obj);
++        // This service extracts text and does not render raster content.
++        // Keep the legacy JBIG2 decoder out of the runtime library.
++        error(errSyntaxError, str->getPos(), "Unknown filter '{0:r}'", &name);
++        str = wrapEOFStream(std::move(str));
+     } else if (name == "JPXDecode") {
+ #if ENABLE_LIBOPENJPEG
+         str = std::make_unique<JPXStream>(std::move(str));
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -434,8 +434,6 @@
+   poppler/GlobalParams.cc
+   poppler/Hints.cc
+   poppler/ImageEmbeddingUtils.cc
+-  poppler/JArithmeticDecoder.cc
+-  poppler/JBIG2Stream.cc
+   poppler/JSInfo.cc
+   poppler/Lexer.cc
+   poppler/Link.cc
