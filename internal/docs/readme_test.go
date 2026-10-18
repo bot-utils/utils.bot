@@ -43,8 +43,18 @@ func TestAboutPromiseMatchesAgentContractAndHomepage(t *testing.T) {
 		if err := json.Unmarshal(get("/openapi/json").Body.Bytes(), &spec); err != nil {
 			t.Fatal(err)
 		}
-		if spec["info"].(map[string]any)["description"] != about.Summary {
+		pitch := spec["info"].(map[string]any)["description"].(string)
+		if !strings.HasPrefix(pitch, about.Summary) || !strings.Contains(pitch, about.Transparency) || !strings.Contains(pitch, serviceinfo.RepositoryURL) {
 			t.Fatal("pitch drift")
+		}
+		for _, path := range []string{"/", "/docs", "/readme", "/info", "/terms", "/openapi", "/openapi/json", "/llms.txt"} {
+			if !strings.Contains(get(path).Body.String(), serviceinfo.RepositoryURL) {
+				t.Fatal("source repository absent from public documentation", mode, path)
+			}
+		}
+		pdf := spec["paths"].(map[string]any)["/v1/pdf/text"].(map[string]any)["post"].(map[string]any)["description"].(string)
+		if !strings.Contains(pdf, "**Auditability.**") || !strings.Contains(pdf, serviceinfo.RepositoryURL) || !strings.Contains(pdf, "all rights reserved") {
+			t.Fatal("PDF tool lost its inspection link or rights notice")
 		}
 		op := spec["paths"].(map[string]any)["/readme"].(map[string]any)["get"].(map[string]any)
 		if op["description"] != about.Description || len(op["security"].([]any)) != 0 {

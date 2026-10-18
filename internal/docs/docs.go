@@ -30,6 +30,7 @@ type pageData struct {
 	Structured                                    template.JS
 	Swagger                                       bool
 	AgentMessage                                  string
+	Repository, Transparency                      string
 	Pitch, Robots                                 string
 	PriceNote                                     string
 	Public                                        bool
@@ -68,11 +69,11 @@ func NewWithConfig(resource string, cfg protocol.Config) http.Handler {
 	}
 	about := serviceinfo.Details()
 	readmeMarkdown := []byte(serviceinfo.Markdown())
-	metadata := "Reusable API tools for AI agents, starting with PDF text extraction. Offload compute, save time and tokens, and pay per use."
+	metadata := "API tools for AI agents. Offload compute, save tokens and pay per use. Source-visible code for transparency, starting with PDF text extraction."
 	structured, err := json.Marshal(map[string]any{
 		"@context": "https://schema.org",
 		"@graph": []any{
-			map[string]any{"@type": "WebSite", "@id": base + "/#website", "url": base + "/", "name": "utils.bot", "description": metadata},
+			map[string]any{"@type": "WebSite", "@id": base + "/#website", "url": base + "/", "name": "utils.bot", "description": metadata, "sameAs": []string{serviceinfo.RepositoryURL}},
 			map[string]any{"@type": "WebPage", "@id": base + "/#webpage", "url": base + "/", "name": "AI agent tools and PDF text extraction | utils.bot", "description": metadata, "isPartOf": map[string]string{"@id": base + "/#website"}},
 		},
 	})
@@ -84,7 +85,7 @@ func NewWithConfig(resource string, cfg protocol.Config) http.Handler {
 	if cfg.Mode() == protocol.ModeBase {
 		priceNote = "PDF pricing: " + protocol.PricingDescription + ". Successful partial or blank results are charged the full fee; parsing failures are not charged."
 	}
-	data := pageData{PriceNote: priceNote, Public: cfg.PublicAccess(), Pitch: about.Summary, Robots: robotsDirective(cfg), AgentMessage: about.Message, PaymentStatus: status, PaymentDetails: details, Availability: availability, Title: "AI agent tools and PDF text extraction | utils.bot", Description: metadata, Canonical: base + "/", Base: base, Resource: resource, Tools: toolsFromSpec(spec), Structured: template.JS(structured)}
+	data := pageData{Repository: serviceinfo.RepositoryURL, Transparency: about.Transparency, PriceNote: priceNote, Public: cfg.PublicAccess(), Pitch: about.Summary, Robots: robotsDirective(cfg), AgentMessage: about.Message, PaymentStatus: status, PaymentDetails: details, Availability: availability, Title: "AI agent tools and PDF text extraction | utils.bot", Description: metadata, Canonical: base + "/", Base: base, Resource: resource, Tools: toolsFromSpec(spec), Structured: template.JS(structured)}
 	render := func(name string, data pageData) []byte {
 		var out bytes.Buffer
 		if err := pages.ExecuteTemplate(&out, name, data); err != nil {

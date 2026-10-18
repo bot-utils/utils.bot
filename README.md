@@ -10,6 +10,13 @@ The public service and API reference are at https://utils.bot/ and
 https://utils.bot/docs. This is a source snapshot for inspection; it contains
 no production credentials, customer documents or deployment records.
 
+## Transparency
+
+Inspect the code behind your request in [this repository](https://github.com/bot-utils/utils.bot).
+Review processing, payment checks and parser isolation alongside the service's
+privacy and security descriptions. We publish the source for scrutiny, with all
+rights reserved in original application code and third-party licenses preserved.
+
 ## Repository contents
 
 - `cmd/server/` and `internal/` contain the receiver and shared packages.
