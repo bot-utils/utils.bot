@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"unicode/utf8"
 )
 
 func TestTraceRejectsUntrustedContent(t *testing.T) {
@@ -160,37 +159,47 @@ func TestAccessFieldsAreFiniteAndNeverIncludeCustomerData(t *testing.T) {
 	}
 }
 
-func TestRejectedURLLoggingIsBoundedEscapedAndLimitedToThatError(t *testing.T) {
-	var buf bytes.Buffer
+func TestRejectionFlagsAreLimitedToTheCanonicalURLError(t *testing.T) {
+	var logs bytes.Buffer
 	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
 	defer slog.SetDefault(previous)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
 	for _, tc := range []struct {
-		status       int
-		code, target string
-		want         bool
+		status int
+		code   string
+		want   bool
 	}{
-		{400, "noncanonical_request_url", "/v1/pdf/text?q=\"\n\r\u2028", true},
-		{400, "noncanonical_request_url", "/v1/pdf/text?q=" + strings.Repeat("界", 2048), true},
-		{400, "noncanonical_request_url", "/v1/pdf/text?q=\xff", true},
-		{200, "noncanonical_request_url", "/secret", false},
-		{400, "invalid_payment", "/secret", false},
+		{400, "noncanonical_request_url", true}, {200, "noncanonical_request_url", false}, {400, "invalid_payment", false},
 	} {
-		buf.Reset()
-		RequestDetailSummary(context.Background(), tc.status, false, false, false, time.Now(), Request{Code: tc.code, RejectedURL: tc.target})
-		if bytes.Count(buf.Bytes(), []byte{'\n'}) != 1 {
-			t.Fatal("request can forge a log record")
-		}
+		logs.Reset()
+		RequestDetailSummary(context.Background(), tc.status, false, false, false, time.Now(), Request{Code: tc.code, NoncanonicalQuery: true, NoncanonicalPath: true})
 		var record map[string]any
-		if json.Unmarshal(buf.Bytes(), &record) != nil {
-			t.Fatal("invalid JSON")
+		if json.Unmarshal(logs.Bytes(), &record) != nil {
+			t.Fatal("invalid log JSON")
 		}
-		target, found := record["rejected_url"].(string)
-		if found != tc.want || len(target) > MaxRejectedURLBytes || !utf8.ValidString(target) {
-			t.Fatal("unexpected or unbounded rejected URL", record)
+		_, present := record["query_present"]
+		if present != tc.want || (present && (record["query_present"] != true || record["encoded_path"] != true)) || record["rejected_url"] != nil {
+			t.Fatal("unexpected URL telemetry", record)
 		}
-		if found && record["rejected_url_truncated"] != (len(strings.ToValidUTF8(tc.target, "\uFFFD")) > MaxRejectedURLBytes) {
-			t.Fatal("truncation not marked")
+	}
+}
+
+func TestOnlyPostedToolsCountAsCompletions(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	defer slog.SetDefault(previous)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	for _, tc := range []struct {
+		route, method string
+		want          float64
+	}{
+		{"/health", "GET", 0}, {"/docs", "GET", 0}, {"/v1/pdf/text", "GET", 0}, {"/v1/pdf/text", "HEAD", 0}, {"/v1/pdf/text", "POST", 1},
+	} {
+		logs.Reset()
+		RequestDetailSummary(context.Background(), 200, false, false, false, time.Now(), Request{Route: tc.route, Method: tc.method})
+		var record map[string]any
+		if json.Unmarshal(logs.Bytes(), &record) != nil || record["completed"] != tc.want || record["tool_requests"] != tc.want {
+			t.Fatal("incorrect tool count", tc, record)
 		}
 	}
 }

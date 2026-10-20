@@ -110,10 +110,8 @@ func (s *Server) Handler() http.Handler {
 		// the CDN being present or on an intermediate proxy normalizing URLs.
 		if r.URL.RawQuery != "" || r.URL.ForceQuery || r.URL.RawPath != "" {
 			if observed, ok := w.(*observedWriter); ok {
-				observed.detail.RejectedURL = r.URL.EscapedPath()
-				if r.URL.RawQuery != "" || r.URL.ForceQuery {
-					observed.detail.RejectedURL += "?" + r.URL.RawQuery
-				}
+				observed.detail.NoncanonicalQuery = r.URL.RawQuery != "" || r.URL.ForceQuery
+				observed.detail.NoncanonicalPath = r.URL.RawPath != ""
 			}
 			w.Header().Set("Connection", "close")
 			write(w, 400, map[string]string{"error": "noncanonical_request_url"})

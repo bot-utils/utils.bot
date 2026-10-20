@@ -46,7 +46,7 @@ func StaticCodeForResource(route, ownerIP string, cfg protocol.Config, resource 
 	if err != nil {
 		return "", err
 	}
-	code := "var config=" + string(config) + ";\n" + staticSource
+	code := "var config=" + string(config) + ";\n" + compactTrustedSource(staticSource)
 	if len(code) > 10<<10 {
 		return "", errors.New("static document exceeds CloudFront code limit")
 	}

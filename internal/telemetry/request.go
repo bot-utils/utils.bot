@@ -3,34 +3,17 @@ package telemetry
 import (
 	"context"
 	"log/slog"
-	"strings"
 	"time"
-	"unicode/utf8"
 )
 
-// Request contains bounded operational categories. RejectedURL is the explicit
-// exception: a noncanonical API request's encoded path/query. It is not read
-// from headers or bodies, but may contain customer data placed in the query.
+// Request contains bounded operational categories only. Arbitrary paths,
+// queries, submitted URLs, credentials and customer content never belong here.
 type Request struct {
 	Route, Method                                             string
 	Stage, Code                                               string
 	VerifyMS, UploadMS, CheckMS, ParseMS, PrepareMS, SettleMS int64
 	PDFium, Poppler                                           string
-	RejectedURL                                               string
-}
-
-const MaxRejectedURLBytes = 2048
-
-func boundedRejectedURL(value string) (string, bool) {
-	value = strings.ToValidUTF8(value, "\uFFFD")
-	if len(value) <= MaxRejectedURLBytes {
-		return value, false
-	}
-	value = value[:MaxRejectedURLBytes]
-	for !utf8.ValidString(value) {
-		value = value[:len(value)-1]
-	}
-	return value, true
+	NoncanonicalQuery, NoncanonicalPath                       bool
 }
 
 func (r *Request) Step(stage string) func() {
@@ -73,7 +56,7 @@ func parserOutcome(outcome string) string {
 }
 func RequestDetailSummary(ctx context.Context, status int, writeFailed, settled, fallback bool, started time.Time, r Request) {
 	serviceFailure := status >= 500 || writeFailed
-	toolRequest := r.Route == "/v1/pdf/text"
+	toolRequest := r.Route == "/v1/pdf/text" && r.Method == "POST"
 	stage := r.Stage
 	switch stage {
 	case "headers", "verify", "upload", "document_check", "parse", "prepare", "settle", "write":
@@ -83,9 +66,8 @@ func RequestDetailSummary(ctx context.Context, status int, writeFailed, settled,
 	fields := []any{"telemetry", "summary", "role", "server", "schema", 4, "route", AccessRoute(r.Route), "method", AccessMethod(r.Method), "request_id", Trace(ctx), "status", status, "code", Code(r.Code), "stage", stage, "elapsed_ms", Milliseconds(started),
 		"verify_ms", r.VerifyMS, "upload_ms", r.UploadMS, "check_ms", r.CheckMS, "parse_ms", r.ParseMS, "prepare_ms", r.PrepareMS, "settle_ms", r.SettleMS, "pdfium", parserOutcome(r.PDFium), "poppler", parserOutcome(r.Poppler),
 		"requests", 1, "tool_requests", Count(toolRequest), "completed", Count(toolRequest && status == 200 && !writeFailed), "document_failures", Count(status == 422), "service_failures", Count(serviceFailure), "paid_service_failures", Count(settled && serviceFailure), "capacity_refusals", Count(status == 429), "fallback_attempts", Count(fallback), "write_failed", writeFailed}
-	if status == 400 && r.Code == "noncanonical_request_url" && r.RejectedURL != "" {
-		target, truncated := boundedRejectedURL(r.RejectedURL)
-		fields = append(fields, "rejected_url", target, "rejected_url_truncated", truncated)
+	if status == 400 && r.Code == "noncanonical_request_url" {
+		fields = append(fields, "query_present", r.NoncanonicalQuery, "encoded_path", r.NoncanonicalPath)
 	}
 	slog.InfoContext(ctx, "request summary", fields...)
 }

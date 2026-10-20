@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -114,7 +115,7 @@ func TestHealthSummaryOnlyOnFiveMinuteTicksAndStops(t *testing.T) {
 	}
 }
 
-func TestRejectedURLIsLoggedWithoutHeadersOrIdentity(t *testing.T) {
+func TestRejectedURLLogsCategoriesWithoutCustomerData(t *testing.T) {
 	var logs bytes.Buffer
 	previous := slog.Default()
 	defer slog.SetDefault(previous)
@@ -129,17 +130,17 @@ func TestRejectedURLIsLoggedWithoutHeadersOrIdentity(t *testing.T) {
 	if json.Unmarshal(bytes.TrimSpace(logs.Bytes()), &record) != nil || record["route"] != "/v1/pdf/text" || record["method"] != "POST" || record["status"] != float64(400) {
 		t.Fatal(logs.String())
 	}
-	if record["rejected_url"] != "/v1/pdf/text?private-canary=customer-data" || record["rejected_url_truncated"] != false {
-		t.Fatal("rejected path/query missing", record)
+	if record["query_present"] != true || record["encoded_path"] != false || record["rejected_url"] != nil {
+		t.Fatal("rejection categories missing or raw URL logged", record)
 	}
-	for _, secret := range []string{"private-authorization", "private-agent", "198.51.100.42"} {
+	for _, secret := range []string{"private-authorization", "private-agent", "198.51.100.42", "private-canary", "customer-data"} {
 		if bytes.Contains(logs.Bytes(), []byte(secret)) {
 			t.Fatal("customer data retained", secret)
 		}
 	}
 }
 
-func TestRejectedURLEncodingAndHealthQueryRemainVisible(t *testing.T) {
+func TestRejectedURLKindsRemainVisibleWithoutContents(t *testing.T) {
 	var logs bytes.Buffer
 	previous := slog.Default()
 	defer slog.SetDefault(previous)
@@ -150,8 +151,33 @@ func TestRejectedURLEncodingAndHealthQueryRemainVisible(t *testing.T) {
 		w := httptest.NewRecorder()
 		s.Handler().ServeHTTP(w, httptest.NewRequest("GET", target, nil))
 		var record map[string]any
-		if w.Code != 400 || json.Unmarshal(logs.Bytes(), &record) != nil || record["rejected_url"] != target {
-			t.Fatal("lost original encoding/query", target, w.Code, logs.String())
+		if w.Code != 400 || json.Unmarshal(logs.Bytes(), &record) != nil || (record["query_present"] != (target != "/%761/pdf/text") || record["encoded_path"] != (target == "/%761/pdf/text") || record["rejected_url"] != nil) {
+			t.Fatal("lost rejection category or logged raw URL", target, w.Code, logs.String())
+		}
+	}
+}
+
+func TestRejectedRequestSecretsNeverEnterLogs(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	defer slog.SetDefault(previous)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	s := New("https://api.utils.bot/v1/pdf/text", nil, nil)
+	for _, target := range []string{
+		"/v1/pdf/text?email=private-canary%40example.com&token=private-canary",
+		"/v1/pdf/text?url=https%3A%2F%2Fprivate-canary.example%2Fpersonal",
+		"/v1/pdf/text?x=private-canary%22%0A%0D%2028",
+		"/v1/pdf/text?" + strings.Repeat("private-canary", 10000),
+		"/private-canary@example.com",
+	} {
+		logs.Reset()
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, httptest.NewRequest("POST", target, nil))
+		if w.Code != 400 && w.Code != 404 {
+			t.Fatal("unexpected admission", w.Code)
+		}
+		if bytes.Contains(logs.Bytes(), []byte("private-canary")) || logs.Len() > 1536 || bytes.Count(logs.Bytes(), []byte{'\n'}) != 1 || !json.Valid(bytes.TrimSpace(logs.Bytes())) {
+			t.Fatal("unbounded or unsafe request diagnostics")
 		}
 	}
 }
