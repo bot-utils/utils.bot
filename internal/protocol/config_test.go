@@ -21,7 +21,7 @@ func TestExplicitPaymentConfiguration(t *testing.T) {
 		if q.Accepts[0].Amount != "10000" || q.Accepts[0].PayTo != cfg.PayTo() || q.Accepts[0].Network != cfg.Network() {
 			t.Fatal("quote mismatch")
 		}
-		for _, notice := range []string{"100 MiB", "100 returned pages", "1 MiB text", "full quoted fee applies to successful partial or blank results", TermsVersion} {
+		for _, notice := range []string{SourceRiskNotice, "100 MiB", "100 returned pages", "1 MiB text", "full quoted fee applies to successful partial or blank results", TermsVersion} {
 			if !strings.Contains(q.Resource.Description, notice) {
 				t.Fatal("prepayment disclosure missing", notice)
 			}

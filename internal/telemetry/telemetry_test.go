@@ -115,14 +115,14 @@ func TestLeanSummaryHasOnlyApprovedFieldsAndSanitizesCategories(t *testing.T) {
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
 	defer slog.SetDefault(previous)
-	r := Request{Stage: "PRIVATE request value", Code: "PRIVATE signature", PDFium: "PRIVATE PDF text", Poppler: "PRIVATE wallet"}
+	r := Request{Route: "/private-customer-canary", Method: "PRIVATE-method", Stage: "PRIVATE request value", Code: "PRIVATE signature", PDFium: "PRIVATE PDF text", Poppler: "PRIVATE wallet"}
 	RequestDetailSummary(WithTrace(context.Background(), NewTrace()), 502, false, false, false, time.Now(), r)
 	var record map[string]any
 	if json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &record) != nil {
 		t.Fatal(buf.String())
 	}
 	allowed := map[string]bool{}
-	for _, key := range strings.Fields("time level msg telemetry role schema request_id status code stage elapsed_ms verify_ms upload_ms check_ms parse_ms prepare_ms settle_ms pdfium poppler requests completed document_failures service_failures paid_service_failures capacity_refusals fallback_attempts write_failed") {
+	for _, key := range strings.Fields("time level msg telemetry role schema route method request_id status code stage elapsed_ms verify_ms upload_ms check_ms parse_ms prepare_ms settle_ms pdfium poppler requests tool_requests completed document_failures service_failures paid_service_failures capacity_refusals fallback_attempts write_failed") {
 		allowed[key] = true
 	}
 	for key := range record {
@@ -130,12 +130,76 @@ func TestLeanSummaryHasOnlyApprovedFieldsAndSanitizesCategories(t *testing.T) {
 			t.Fatal("new log field requires privacy review", key)
 		}
 	}
-	if strings.Contains(buf.String(), "PRIVATE") || buf.Len() > 1536 {
+	if record["route"] != "unsupported" || record["method"] != "OTHER" {
+		t.Fatal("unsafe access fields", record)
+	}
+	if strings.Contains(buf.String(), "PRIVATE") || strings.Contains(buf.String(), "private-customer-canary") || buf.Len() > 1536 {
 		t.Fatal("unbounded/customer data", buf.String())
 	}
 	for _, key := range []string{"stage", "code", "pdfium", "poppler"} {
 		if record[key] != "unknown" {
 			t.Fatal(key, record)
+		}
+	}
+}
+
+func TestAccessFieldsAreFiniteAndNeverIncludeCustomerData(t *testing.T) {
+	for _, path := range []string{"/v1/pdf/text", "/health", "/docs", "/openapi"} {
+		if AccessRoute(path) != path {
+			t.Fatal(path)
+		}
+	}
+	for _, path := range []string{"/private/customer@example.com", "/v1/pdf/text?token=secret", "https://customer.example/secret", "/health\nsecret", "/v1/pdf/text/private", "//docs"} {
+		if AccessRoute(path) != "unsupported" {
+			t.Fatal("raw route retained", path)
+		}
+	}
+	if AccessMethod("CUSTOMER_SECRET") != "OTHER" || AccessMethod("POST") != "POST" {
+		t.Fatal("unsafe method")
+	}
+}
+
+func TestRejectionFlagsAreLimitedToTheCanonicalURLError(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	defer slog.SetDefault(previous)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	for _, tc := range []struct {
+		status int
+		code   string
+		want   bool
+	}{
+		{400, "noncanonical_request_url", true}, {200, "noncanonical_request_url", false}, {400, "invalid_payment", false},
+	} {
+		logs.Reset()
+		RequestDetailSummary(context.Background(), tc.status, false, false, false, time.Now(), Request{Code: tc.code, NoncanonicalQuery: true, NoncanonicalPath: true})
+		var record map[string]any
+		if json.Unmarshal(logs.Bytes(), &record) != nil {
+			t.Fatal("invalid log JSON")
+		}
+		_, present := record["query_present"]
+		if present != tc.want || (present && (record["query_present"] != true || record["encoded_path"] != true)) || record["rejected_url"] != nil {
+			t.Fatal("unexpected URL telemetry", record)
+		}
+	}
+}
+
+func TestOnlyPostedToolsCountAsCompletions(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	defer slog.SetDefault(previous)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	for _, tc := range []struct {
+		route, method string
+		want          float64
+	}{
+		{"/health", "GET", 0}, {"/docs", "GET", 0}, {"/v1/pdf/text", "GET", 0}, {"/v1/pdf/text", "HEAD", 0}, {"/v1/pdf/text", "POST", 1},
+	} {
+		logs.Reset()
+		RequestDetailSummary(context.Background(), 200, false, false, false, time.Now(), Request{Route: tc.route, Method: tc.method})
+		var record map[string]any
+		if json.Unmarshal(logs.Bytes(), &record) != nil || record["completed"] != tc.want || record["tool_requests"] != tc.want {
+			t.Fatal("incorrect tool count", tc, record)
 		}
 	}
 }

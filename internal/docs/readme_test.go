@@ -80,7 +80,7 @@ func TestAboutPromiseMatchesAgentContractAndHomepage(t *testing.T) {
 				}
 			}
 		}
-		if len(about.Benefits) != 4 || !strings.Contains(html.UnescapeString(home), about.Audience) {
+		if len(about.Benefits) != 5 || !strings.Contains(html.UnescapeString(home), about.Audience) {
 			t.Fatal("benefits or intended audience missing from homepage")
 		}
 		head := httptest.NewRecorder()
