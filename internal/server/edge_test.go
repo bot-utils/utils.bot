@@ -143,7 +143,7 @@ func TestPanicReleasesCapacityAndLogsNoRequestData(t *testing.T) {
 	if w.Code != 400 || calls != 2 {
 		t.Fatal("unsupported query reached parsing")
 	}
-	for _, private := range []string{"private document text", "private signature", "private-query"} {
+	for _, private := range []string{"private document text", "private signature"} {
 		if strings.Contains(logs.String(), private) {
 			t.Fatal("request data entered logs")
 		}

@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestTraceRejectsUntrustedContent(t *testing.T) {
@@ -115,14 +116,14 @@ func TestLeanSummaryHasOnlyApprovedFieldsAndSanitizesCategories(t *testing.T) {
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
 	defer slog.SetDefault(previous)
-	r := Request{Stage: "PRIVATE request value", Code: "PRIVATE signature", PDFium: "PRIVATE PDF text", Poppler: "PRIVATE wallet"}
+	r := Request{Route: "/private-customer-canary", Method: "PRIVATE-method", Stage: "PRIVATE request value", Code: "PRIVATE signature", PDFium: "PRIVATE PDF text", Poppler: "PRIVATE wallet"}
 	RequestDetailSummary(WithTrace(context.Background(), NewTrace()), 502, false, false, false, time.Now(), r)
 	var record map[string]any
 	if json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &record) != nil {
 		t.Fatal(buf.String())
 	}
 	allowed := map[string]bool{}
-	for _, key := range strings.Fields("time level msg telemetry role schema request_id status code stage elapsed_ms verify_ms upload_ms check_ms parse_ms prepare_ms settle_ms pdfium poppler requests completed document_failures service_failures paid_service_failures capacity_refusals fallback_attempts write_failed") {
+	for _, key := range strings.Fields("time level msg telemetry role schema route method request_id status code stage elapsed_ms verify_ms upload_ms check_ms parse_ms prepare_ms settle_ms pdfium poppler requests tool_requests completed document_failures service_failures paid_service_failures capacity_refusals fallback_attempts write_failed") {
 		allowed[key] = true
 	}
 	for key := range record {
@@ -130,12 +131,66 @@ func TestLeanSummaryHasOnlyApprovedFieldsAndSanitizesCategories(t *testing.T) {
 			t.Fatal("new log field requires privacy review", key)
 		}
 	}
-	if strings.Contains(buf.String(), "PRIVATE") || buf.Len() > 1536 {
+	if record["route"] != "unsupported" || record["method"] != "OTHER" {
+		t.Fatal("unsafe access fields", record)
+	}
+	if strings.Contains(buf.String(), "PRIVATE") || strings.Contains(buf.String(), "private-customer-canary") || buf.Len() > 1536 {
 		t.Fatal("unbounded/customer data", buf.String())
 	}
 	for _, key := range []string{"stage", "code", "pdfium", "poppler"} {
 		if record[key] != "unknown" {
 			t.Fatal(key, record)
+		}
+	}
+}
+
+func TestAccessFieldsAreFiniteAndNeverIncludeCustomerData(t *testing.T) {
+	for _, path := range []string{"/v1/pdf/text", "/health", "/docs", "/openapi"} {
+		if AccessRoute(path) != path {
+			t.Fatal(path)
+		}
+	}
+	for _, path := range []string{"/private/customer@example.com", "/v1/pdf/text?token=secret", "https://customer.example/secret", "/health\nsecret", "/v1/pdf/text/private", "//docs"} {
+		if AccessRoute(path) != "unsupported" {
+			t.Fatal("raw route retained", path)
+		}
+	}
+	if AccessMethod("CUSTOMER_SECRET") != "OTHER" || AccessMethod("POST") != "POST" {
+		t.Fatal("unsafe method")
+	}
+}
+
+func TestRejectedURLLoggingIsBoundedEscapedAndLimitedToThatError(t *testing.T) {
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	defer slog.SetDefault(previous)
+	for _, tc := range []struct {
+		status       int
+		code, target string
+		want         bool
+	}{
+		{400, "noncanonical_request_url", "/v1/pdf/text?q=\"\n\r\u2028", true},
+		{400, "noncanonical_request_url", "/v1/pdf/text?q=" + strings.Repeat("界", 2048), true},
+		{400, "noncanonical_request_url", "/v1/pdf/text?q=\xff", true},
+		{200, "noncanonical_request_url", "/secret", false},
+		{400, "invalid_payment", "/secret", false},
+	} {
+		buf.Reset()
+		RequestDetailSummary(context.Background(), tc.status, false, false, false, time.Now(), Request{Code: tc.code, RejectedURL: tc.target})
+		if bytes.Count(buf.Bytes(), []byte{'\n'}) != 1 {
+			t.Fatal("request can forge a log record")
+		}
+		var record map[string]any
+		if json.Unmarshal(buf.Bytes(), &record) != nil {
+			t.Fatal("invalid JSON")
+		}
+		target, found := record["rejected_url"].(string)
+		if found != tc.want || len(target) > MaxRejectedURLBytes || !utf8.ValidString(target) {
+			t.Fatal("unexpected or unbounded rejected URL", record)
+		}
+		if found && record["rejected_url_truncated"] != (len(strings.ToValidUTF8(tc.target, "\uFFFD")) > MaxRejectedURLBytes) {
+			t.Fatal("truncation not marked")
 		}
 	}
 }
