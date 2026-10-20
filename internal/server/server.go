@@ -89,7 +89,7 @@ func (s *Server) Handler() http.Handler {
 			trace := telemetry.NewTrace()
 			r = r.WithContext(telemetry.WithTrace(r.Context(), trace))
 			w.Header().Set("X-Request-ID", trace)
-			observed := &observedWriter{ResponseWriter: w, detail: telemetry.Request{Route: telemetry.AccessRoute(r.URL.Path), Method: telemetry.AccessMethod(r.Method), Stage: "headers"}}
+			observed := &observedWriter{ResponseWriter: w, detail: telemetry.Request{Route: telemetry.AccessRoute(r.URL.Path), Method: telemetry.AccessMethod(r.Method), RequestPath: r.URL.EscapedPath(), RequestQuery: r.URL.RawQuery, ForceQuery: r.URL.ForceQuery, Stage: "headers"}}
 			defer func() {
 				telemetry.RequestDetailSummary(r.Context(), observed.status, observed.writeFailed, observed.settled, observed.fallback, start, observed.detail)
 			}()

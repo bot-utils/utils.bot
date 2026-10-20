@@ -6,10 +6,13 @@ import (
 	"time"
 )
 
-// Request contains bounded operational categories only. Arbitrary paths,
-// queries, submitted URLs, credentials and customer content never belong here.
+// Request has fixed operational categories and an explicit request-target
+// diagnostic. Only RequestURL may emit the target, after bounded credential
+// redaction. Headers, body contents and requester network metadata are excluded.
 type Request struct {
 	Route, Method                                             string
+	RequestPath, RequestQuery                                 string
+	ForceQuery                                                bool
 	Stage, Code                                               string
 	VerifyMS, UploadMS, CheckMS, ParseMS, PrepareMS, SettleMS int64
 	PDFium, Poppler                                           string
@@ -63,11 +66,15 @@ func RequestDetailSummary(ctx context.Context, status int, writeFailed, settled,
 	default:
 		stage = "unknown"
 	}
-	fields := []any{"telemetry", "summary", "role", "server", "schema", 4, "route", AccessRoute(r.Route), "method", AccessMethod(r.Method), "request_id", Trace(ctx), "status", status, "code", Code(r.Code), "stage", stage, "elapsed_ms", Milliseconds(started),
+	fields := []any{"telemetry", "summary", "role", "server", "schema", 5, "route", AccessRoute(r.Route), "method", AccessMethod(r.Method), "request_id", Trace(ctx), "status", status, "code", Code(r.Code), "stage", stage, "elapsed_ms", Milliseconds(started),
 		"verify_ms", r.VerifyMS, "upload_ms", r.UploadMS, "check_ms", r.CheckMS, "parse_ms", r.ParseMS, "prepare_ms", r.PrepareMS, "settle_ms", r.SettleMS, "pdfium", parserOutcome(r.PDFium), "poppler", parserOutcome(r.Poppler),
 		"requests", 1, "tool_requests", Count(toolRequest), "completed", Count(toolRequest && status == 200 && !writeFailed), "document_failures", Count(status == 422), "service_failures", Count(serviceFailure), "paid_service_failures", Count(settled && serviceFailure), "capacity_refusals", Count(status == 429), "fallback_attempts", Count(fallback), "write_failed", writeFailed}
 	if status == 400 && r.Code == "noncanonical_request_url" {
 		fields = append(fields, "query_present", r.NoncanonicalQuery, "encoded_path", r.NoncanonicalPath)
+	}
+	if r.RequestPath != "" && (AccessRoute(r.Route) == "unsupported" || r.RequestPath != r.Route || r.RequestQuery != "" || r.ForceQuery) {
+		target, truncated, redacted := RequestURL(r.RequestPath, r.RequestQuery, r.ForceQuery)
+		fields = append(fields, "request_url", target, "request_url_truncated", truncated, "request_url_redacted", redacted)
 	}
 	slog.InfoContext(ctx, "request summary", fields...)
 }

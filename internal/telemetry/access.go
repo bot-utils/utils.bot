@@ -2,8 +2,8 @@ package telemetry
 
 import "pdfservice/internal/paths"
 
-// AccessRoute returns only literals from our public route catalog. Never log
-// arbitrary paths, queries, hostnames or submitted URLs: those can contain data.
+// AccessRoute provides a finite aggregation label. RequestURL separately
+// preserves actual incoming paths for debugging, with bounded query redaction.
 func AccessRoute(path string) string {
 	for _, known := range paths.Routes {
 		if path == known {

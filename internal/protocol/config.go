@@ -14,7 +14,7 @@ const (
 	ModeBase           = "cdp-base"
 	BaseNetwork        = "eip155:8453"
 	BaseAsset          = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-	TermsVersion       = "2026-10-19-r11"
+	TermsVersion       = "2026-10-19-r13"
 	SmallPDFLimit      = 25 << 20
 	SmallAmount        = "10000"
 	LargeAmount        = "20000"
