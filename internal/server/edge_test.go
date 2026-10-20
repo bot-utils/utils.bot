@@ -137,7 +137,7 @@ func TestPanicReleasesCapacityAndLogsNoRequestData(t *testing.T) {
 			t.Fatalf("status=%d slots=%d", w.Code, len(s.Slots))
 		}
 	}
-	query := httptest.NewRequest("POST", "/v1/pdf/text?private-query=yes", strings.NewReader("private document text"))
+	query := httptest.NewRequest("POST", "/v1/pdf/text?token=private-query", strings.NewReader("private document text"))
 	w := httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, query)
 	if w.Code != 400 || calls != 2 {

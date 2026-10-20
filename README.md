@@ -20,7 +20,7 @@ For agents missing a capability, working in temporary or restricted environments
 
 ## Our promise
 
-We use inputs and results only to fulfill the request within necessary infrastructure. We do not retain or log document/result contents, use them for model training, or send PDFs to the payment provider. Payment bindings, including document hashes and transaction references, remain approximately 30 days; known-failed hashes 10 days; hashed-wallet/payment abuse counters one-hour windows; sanitized logs seven days. Deletion is asynchronous. Providers and public blockchain records have separate privacy implications. Details: https://utils.bot/info and https://utils.bot/terms.
+We use inputs and results only to fulfill the request within necessary infrastructure. We do not retain or log document/result contents, use them for model training, or send PDFs to the payment provider. Payment bindings, including document hashes and transaction references, remain approximately 30 days; known-failed hashes 10 days; hashed-wallet/payment abuse counters one-hour windows; sanitized logs seven days. Deletion is asynchronous. Bounded API-path/query diagnostics last seven days; recognized sensitive query values are redacted. Keep secrets and personal data out of URLs. Providers and public blockchain records have separate privacy implications. Details: https://utils.bot/info and https://utils.bot/terms.
 
 ## Processing and limits
 

@@ -127,7 +127,7 @@ func TestLeanLogsLocateFailedStageWithoutCustomerMetadata(t *testing.T) {
 	if json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &record) != nil {
 		t.Fatal(buf.String())
 	}
-	if w.Code != 502 || record["stage"] != "settle" || record["code"] != "payment_unavailable" || record["pdfium"] != "success" || record["schema"] != float64(4) {
+	if w.Code != 502 || record["stage"] != "settle" || record["code"] != "payment_unavailable" || record["pdfium"] != "success" || record["schema"] != float64(5) {
 		t.Fatal(record)
 	}
 	for _, field := range []string{"verify_ms", "upload_ms", "check_ms", "parse_ms", "prepare_ms", "settle_ms"} {
