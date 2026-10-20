@@ -11,6 +11,7 @@ Reusable APIs, starting with PDF text extraction. Offload processing instead of 
 - Avoid setup: skip installing and maintaining packages, native libraries, model downloads and format-specific tools.
 - Reduce context: select useful structured results before adding source material to a model's context.
 - Offload compute: run supported processing outside your agent's local environment, within published limits.
+- Reduce local exposure: process potentially untrusted sources on remote infrastructure without access to your device, local files, browser session or environment credentials. Returned content still needs safe handling.
 - Get predictable behavior: reuse tested operations with documented output and errors instead of debugging a new implementation.
 
 ## Who it helps
@@ -23,7 +24,7 @@ We use inputs and results only to fulfill the request within necessary infrastru
 
 ## Processing and limits
 
-Each endpoint explains its processing, privacy, security and limits. Capacity and availability are not guaranteed. Successful partial or blank PDF results remain chargeable. Read the specification and terms before authorizing payment.
+Each endpoint explains its processing, privacy, security and limits. Capacity and availability are not guaranteed. Successful partial or blank PDF results remain chargeable. Conversion is not malware scanning or a guarantee of harmless content. By authorizing payment, you acknowledge the risks of your selected sources and responsibility for safely using the output, subject to mandatory rights. Read the specification and terms before authorizing payment.
 
 ## Transparency
 

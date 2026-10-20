@@ -29,7 +29,7 @@ func (s *Server) healthLogs(ctx context.Context, ticks <-chan time.Time) {
 			if s.Draining.Load() {
 				status = "draining"
 			}
-			slog.InfoContext(ctx, "process health", "role", "server", "status", status, "active_requests", len(s.Slots), "capacity", cap(s.Slots))
+			slog.InfoContext(ctx, "process health", "role", "server", "status", status, "active_requests", len(s.Slots), "capacity", cap(s.Slots), "route", "/health", "requests_since_previous_health", s.healthRequests.Swap(0))
 		}
 	}
 }

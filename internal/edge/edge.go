@@ -60,9 +60,24 @@ func CodeWithConfig(resource, ownerIP string, cfg protocol.Config) (string, erro
 	if err != nil {
 		return "", err
 	}
-	code := "var config = " + string(config) + ";\n" + source
+	code := "var config = " + string(config) + ";\n" + compactTrustedSource(source)
 	if len(code) > 10<<10 {
 		return "", errors.New("edge function exceeds CloudFront code limit")
 	}
 	return code, nil
+}
+
+// Embedded scripts contain no template literals or multiline string values.
+// Keep newlines (including automatic semicolon insertion) while dropping only
+// indentation, blank lines and whole-line comments from trusted source.
+func compactTrustedSource(source string) string {
+	var out strings.Builder
+	for line := range strings.SplitSeq(source, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "//") {
+			out.WriteString(line)
+			out.WriteByte('\n')
+		}
+	}
+	return out.String()
 }

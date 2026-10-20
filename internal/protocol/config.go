@@ -14,10 +14,11 @@ const (
 	ModeBase           = "cdp-base"
 	BaseNetwork        = "eip155:8453"
 	BaseAsset          = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-	TermsVersion       = "2026-10-18-r10"
+	TermsVersion       = "2026-10-19-r11"
 	SmallPDFLimit      = 25 << 20
 	SmallAmount        = "10000"
 	LargeAmount        = "20000"
+	SourceRiskNotice   = "By authorizing payment, you acknowledge that selected source content may be malicious and accept responsibility for safely using returned content, subject to mandatory rights. Conversion is not malware scanning. "
 	PricingDescription = "0.01 USDC for PDFs through 25 MiB; 0.02 USDC above 25 MiB through 100 MiB"
 )
 
@@ -127,7 +128,7 @@ func (c Config) Description() string {
 }
 func (c Config) Quote(resource string) types.PaymentRequired {
 	terms := WebsiteBase(resource) + "/terms#terms-of-use"
-	return types.PaymentRequired{X402Version: 2, Resource: &types.ResourceInfo{URL: resource, MimeType: "application/json", Description: c.Description() + " Limits: 100 MiB upload, up to 100 returned pages and 1 MiB text. The full quoted fee applies to successful partial or blank results. Five failed/unpaid attempts or abandoned verified requests per wallet per fixed one-hour window pause new requests; paid retries also pause after five abandonments of that payment. Honor Retry-After on 429. Submitting a PDF with payment authorization indicates agreement to Terms " + TermsVersion + ": " + terms}, Accepts: []types.PaymentRequirements{c.Requirements()}}
+	return types.PaymentRequired{X402Version: 2, Resource: &types.ResourceInfo{URL: resource, MimeType: "application/json", Description: c.Description() + " Limits: 100 MiB upload, up to 100 returned pages and 1 MiB text. The full quoted fee applies to successful partial or blank results. Five failed/unpaid attempts or abandoned verified requests per wallet per fixed one-hour window pause new requests; paid retries also pause after five abandonments of that payment. Honor Retry-After on 429. " + SourceRiskNotice + "Submitting a PDF with payment authorization indicates agreement to Terms " + TermsVersion + ": " + terms}, Accepts: []types.PaymentRequirements{c.Requirements()}}
 }
 func (c Config) ValidSettlement(s *x402.SettleResponse) bool {
 	return s != nil && s.Success && s.ErrorReason == "" && s.ErrorMessage == "" && string(s.Network) == c.Network() && Hex(s.Transaction, 32) && Hex(s.Payer, 20) && (s.Amount == "" || s.Amount == c.Requirements().Amount)

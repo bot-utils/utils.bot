@@ -26,12 +26,13 @@ import (
 type PayFunc func(context.Context, protocol.PaymentRequest) (protocol.PaymentResponse, error)
 type ParseFunc func(context.Context, []byte) (parser.Result, error)
 type Server struct {
-	Config   protocol.Config
-	Resource string
-	Pay      PayFunc
-	Parse    ParseFunc
-	Slots    chan struct{}
-	Draining atomic.Bool
+	Config         protocol.Config
+	Resource       string
+	Pay            PayFunc
+	Parse          ParseFunc
+	Slots          chan struct{}
+	Draining       atomic.Bool
+	healthRequests atomic.Uint64
 }
 
 type observedWriter struct {
@@ -77,14 +78,18 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.Handle("GET /", docs.NewWithConfig(s.Resource, s.Config))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// ALB/container health probes are frequent and intentionally silent.
-		// Every other request gets one bounded summary, including early refusals.
-		if r.URL.Path != "/health" || r.Method != http.MethodGet && r.Method != http.MethodHead {
+		// ALB/container probes have no protected CloudFront-origin header. Keep
+		// them quiet; viewer health requests delivered by our protected origin
+		// get the same sanitized access record as other requests. This marker
+		// classifies telemetry only; ALB rules enforce origin authorization.
+		if r.URL.Path == "/health" && r.URL.RawQuery == "" && !r.URL.ForceQuery && r.URL.RawPath == "" && (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.Header.Get("X-Agent-Pdf-Origin") == "" {
+			s.healthRequests.Add(1)
+		} else {
 			start := time.Now()
 			trace := telemetry.NewTrace()
 			r = r.WithContext(telemetry.WithTrace(r.Context(), trace))
 			w.Header().Set("X-Request-ID", trace)
-			observed := &observedWriter{ResponseWriter: w, detail: telemetry.Request{Stage: "headers"}}
+			observed := &observedWriter{ResponseWriter: w, detail: telemetry.Request{Route: telemetry.AccessRoute(r.URL.Path), Method: telemetry.AccessMethod(r.Method), Stage: "headers"}}
 			defer func() {
 				telemetry.RequestDetailSummary(r.Context(), observed.status, observed.writeFailed, observed.settled, observed.fallback, start, observed.detail)
 			}()
@@ -104,6 +109,10 @@ func (s *Server) Handler() http.Handler {
 		// Repeat admission checks at the origin; correctness must not depend on
 		// the CDN being present or on an intermediate proxy normalizing URLs.
 		if r.URL.RawQuery != "" || r.URL.ForceQuery || r.URL.RawPath != "" {
+			if observed, ok := w.(*observedWriter); ok {
+				observed.detail.NoncanonicalQuery = r.URL.RawQuery != "" || r.URL.ForceQuery
+				observed.detail.NoncanonicalPath = r.URL.RawPath != ""
+			}
 			w.Header().Set("Connection", "close")
 			write(w, 400, map[string]string{"error": "noncanonical_request_url"})
 			return
@@ -219,7 +228,7 @@ func (s *Server) recordAbandonment(ctx context.Context, header string) bool {
 }
 
 func (s *Server) pdf(w http.ResponseWriter, r *http.Request) {
-	detail := &telemetry.Request{Stage: "headers"}
+	detail := &telemetry.Request{Route: telemetry.AccessRoute(r.URL.Path), Method: telemetry.AccessMethod(r.Method), Stage: "headers"}
 	if observed, ok := w.(*observedWriter); ok {
 		detail = &observed.detail
 	}
