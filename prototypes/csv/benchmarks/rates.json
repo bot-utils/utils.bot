@@ -1,0 +1,115 @@
+{
+  "region": "us-east-2",
+  "checked_date": "2026-10-21",
+  "currency": "USD",
+  "rates": {
+    "arm_cpu": {
+      "USD": "0.0323800000",
+      "unit": "hours",
+      "sku": "FH39MKJC497ESWU9",
+      "usage_type": "USE2-Fargate-ARM-vCPU-Hours:perCPU",
+      "publication_date": "2026-10-19T22:43:17Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/us-east-2/index.json"
+    },
+    "arm_memory": {
+      "USD": "0.0035600000",
+      "unit": "hours",
+      "sku": "B7ZYF6FKX8ECBKSF",
+      "usage_type": "USE2-Fargate-ARM-GB-Hours",
+      "publication_date": "2026-10-19T22:43:17Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/us-east-2/index.json"
+    },
+    "x86_cpu": {
+      "USD": "0.0404800000",
+      "unit": "hours",
+      "sku": "UGSJ89BUWB7SMJ6A",
+      "usage_type": "USE2-Fargate-vCPU-Hours:perCPU",
+      "publication_date": "2026-10-19T22:43:17Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/us-east-2/index.json"
+    },
+    "x86_memory": {
+      "USD": "0.0044450000",
+      "unit": "hours",
+      "sku": "HH5EE3ZFWSFKGKWM",
+      "usage_type": "USE2-Fargate-GB-Hours",
+      "publication_date": "2026-10-19T22:43:17Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/us-east-2/index.json"
+    },
+    "glue_dpu": {
+      "USD": "0.4400000000",
+      "unit": "DPU-Hour",
+      "sku": "35EA4QMYDXPWWRHJ",
+      "usage_type": "USE2-ETL-DPU-Hour",
+      "publication_date": "2026-10-12T18:55:42Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSGlue/current/us-east-2/index.json"
+    },
+    "endpoint_hour": {
+      "USD": "0.0100000000",
+      "unit": "Hrs",
+      "sku": "P2Q7Y6KZKKFAHEVG",
+      "usage_type": "USE2-VpcEndpoint-Hours",
+      "publication_date": "2026-10-16T22:43:21Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonVPC/current/us-east-2/index.json"
+    },
+    "endpoint_data": {
+      "USD": "0.0100000000",
+      "unit": "GB",
+      "sku": "7FYQG974DNVUNVKW",
+      "usage_type": "USE2-VpcEndpoint-Bytes",
+      "publication_date": "2026-10-16T22:43:21Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonVPC/current/us-east-2/index.json"
+    },
+    "s3_storage": {
+      "USD": "0.0230000000",
+      "unit": "GB-Mo",
+      "sku": "YPGKVRB2EKTVDJDT",
+      "usage_type": "USE2-TimedStorage-ByteHrs",
+      "publication_date": "2026-10-15T17:35:40Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-2/index.json"
+    },
+    "s3_write_request": {
+      "USD": "0.0000050000",
+      "unit": "Requests",
+      "sku": "GJKK9PMSTKPNGZS9",
+      "usage_type": "USE2-Requests-Tier1",
+      "publication_date": "2026-10-15T17:35:40Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-2/index.json"
+    },
+    "logs_ingestion": {
+      "USD": "0.5000000000",
+      "unit": "GB",
+      "sku": "5T6Z6V26DSR7SZ49",
+      "usage_type": "USE2-DataProcessing-Bytes",
+      "publication_date": "2026-10-07T11:55:40Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/us-east-2/index.json"
+    },
+    "logs_storage": {
+      "USD": "0.0300000000",
+      "unit": "GB-Mo",
+      "sku": "X7X4WD4A95NDR9U5",
+      "usage_type": "USE2-TimedStorage-ByteHrs",
+      "publication_date": "2026-10-07T11:55:40Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/us-east-2/index.json"
+    },
+    "image_storage": {
+      "USD": "0.1000000000",
+      "unit": "GB-Mo",
+      "sku": "NA4VZMZUEQGMXP2Y",
+      "usage_type": "USE2-TimedStorage-ByteHrs",
+      "publication_date": "2026-09-11T12:44:25Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECR/current/us-east-2/index.json"
+    },
+    "dns_million_queries": {
+      "USD": "0.60",
+      "unit": "million queries",
+      "source": "https://aws.amazon.com/route53/pricing/",
+      "checked_date": "2026-10-21"
+    },
+    "dns_domain_month": {
+      "USD": "0.0005",
+      "unit": "domain-month",
+      "source": "https://aws.amazon.com/route53/pricing/",
+      "checked_date": "2026-10-21"
+    }
+  }
+}

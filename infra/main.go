@@ -21,6 +21,11 @@ func main() {
 	app := awscdk.NewApp(nil)
 	account := os.Getenv("CDK_DEFAULT_ACCOUNT")
 	requireDeploymentAccount(account, os.Getenv("PDF_LOCALSTACK") == "1")
+	if os.Getenv("CSV_TRIAL_NETWORK_ONLY") == "1" {
+		csvTrialNetworkStack(app, account, os.Getenv("CSV_TRIAL_AZ"), os.Getenv("CSV_TRIAL_S3_PREFIX_LIST"), os.Getenv("CSV_TRIAL_ENABLE_PAID_ENDPOINTS") == "1")
+		app.Synth(nil)
+		return
+	}
 	if os.Getenv("PDF_CLOUDFRONT_ACCESS_LOGS_ONLY") == "1" {
 		cloudFrontAccessLogsStack(app, account, os.Getenv("PDF_CLOUDFRONT_DISTRIBUTION_ID"))
 		app.Synth(nil)
