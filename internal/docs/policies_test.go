@@ -178,26 +178,6 @@ func TestPDFAuthorizationTimeBudgetIsDisclosedPerOperation(t *testing.T) {
 	}
 }
 
-func TestSourceRiskTermsAndRemoteProcessingBenefitMatchPublishedRepresentations(t *testing.T) {
-	h := New("https://utils.bot/v1/pdf/text")
-	for _, path := range []string{"/terms", "/openapi", "/openapi/json"} {
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
-		for _, notice := range []string{"Requested-source risk and payment acknowledgment", "By authorizing payment", "conversion is not malware scanning", "nonwaivable duties"} {
-			if w.Code != 200 || !strings.Contains(w.Body.String(), notice) {
-				t.Fatalf("%s lacks %q", path, notice)
-			}
-		}
-	}
-	for _, path := range []string{"/", "/readme", "/openapi", "/openapi/json", "/llms.txt"} {
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
-		if !strings.Contains(w.Body.String(), "Reduce local exposure") || !strings.Contains(w.Body.String(), "environment credentials") {
-			t.Fatal("remote-processing benefit omitted", path)
-		}
-	}
-}
-
 func TestTermsCoverToolsAndURLSourceBehaviorWithoutAdvertisingAnUnreleasedRoute(t *testing.T) {
 	h := New("https://utils.bot/v1/pdf/text")
 	for _, path := range []string{"/terms", "/openapi", "/openapi/json"} {
@@ -223,6 +203,33 @@ func TestTermsCoverToolsAndURLSourceBehaviorWithoutAdvertisingAnUnreleasedRoute(
 	for path := range spec.Paths {
 		if strings.Contains(path, "/html") || strings.Contains(path, "/url") || strings.Contains(path, "/ocr") || strings.Contains(path, "/csv") {
 			t.Fatal("unreleased tool advertised", path)
+		}
+	}
+}
+
+func TestRequestedSourceRiskIsSharedWithAgentsAndHumanDocumentation(t *testing.T) {
+	for _, javascript := range []bool{false, true} {
+		cfg := (protocol.Config{}).WithHTMLJavaScript(javascript)
+		if javascript {
+			cfg = cfg.ForHTML()
+		}
+		h := NewWithHTML("https://utils.bot/v1/pdf/text", cfg)
+		for _, path := range []string{"/terms", "/openapi", "/openapi/json"} {
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+			for _, notice := range []string{"Requested-source risk and payment acknowledgment", "source you select may contain malicious", "conversion is not malware scanning", "safely handling returned content", "nonwaivable duties", "willful misconduct or gross negligence"} {
+				if w.Code != 200 || !strings.Contains(w.Body.String(), notice) {
+					t.Fatalf("%s omits source-risk term %q", path, notice)
+				}
+			}
+		}
+	}
+	h := New("https://utils.bot/v1/pdf/text")
+	for _, path := range []string{"/", "/readme", "/openapi", "/openapi/json"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		if !strings.Contains(w.Body.String(), "Reduce local exposure") || !strings.Contains(w.Body.String(), "environment credentials") {
+			t.Fatalf("%s omits accurate remote-processing benefit", path)
 		}
 	}
 }

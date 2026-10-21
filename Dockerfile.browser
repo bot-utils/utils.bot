@@ -1,0 +1,56 @@
+# Credential-free ARM64 browser runtime, assembled from an explicit closure.
+FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS launcher
+# Immutable archive dates; Debian signatures and package hashes remain checked.
+# The base contains this single source file. Replace it before installing tools.
+COPY native/browser-apt.sources /etc/apt/sources.list.d/debian.sources
+RUN test ! -e /etc/apt/sources.list && test "$(ls /etc/apt/sources.list.d | wc -l)" -eq 1
+RUN --mount=type=tmpfs,target=/var/lib/apt/lists apt-get -o APT::Update::Error-Mode=any update && apt-get install -y --no-install-recommends gcc libc6-dev
+COPY native/browser-launch.c /src/browser-launch.c
+RUN gcc -Os -Wall -Wextra -Werror -fstack-protector-strong -Wl,-z,relro,-z,now -o /browser-launch /src/browser-launch.c
+
+FROM launcher AS browser-dependencies
+# Match the headless executable's actual linked libraries. Desktop GTK/Pango,
+# Cairo, CUPS, curl, Vulkan and accessibility bridge packages are unnecessary.
+RUN --mount=type=tmpfs,target=/var/lib/apt/lists apt-get -o APT::Update::Error-Mode=any update && apt-get install -y --no-install-recommends python3 ca-certificates fontconfig-config fonts-liberation libasound2t64 libatk1.0-0t64 libatspi2.0-0t64 libdbus-1-3 libexpat1 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libudev1 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2
+# Official Chrome for Testing ARM64 headless shell. Pin bytes as well as version.
+ADD --checksum=sha256:955059fa7020d7be85eb503e21339fd4d718f51f5996d3b60633fbf908bda132 https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/linux-arm64/chrome-headless-shell-linux-arm64.zip /tmp/browser.zip
+# Build-time only toolchain and headers for the pinned security updates.
+RUN --mount=type=tmpfs,target=/var/lib/apt/lists apt-get -o APT::Update::Error-Mode=any update && apt-get install -y --no-install-recommends make autoconf automake libtool pkg-config x11proto-dev xtrans-dev libxcb1-dev libx11-dev libxext-dev libxfixes-dev xutils-dev patch meson ninja-build libffi-dev libpcre2-dev gettext
+COPY native/browser-libraries.json native/browser-libraries.py /src/
+COPY native/patches/zlib-df84af2.patch native/patches/glib-replace-exclusive.patch /src/patches/
+RUN python3 /src/browser-libraries.py
+COPY native/browser-runtime.py /src/browser-runtime.py
+RUN python3 /src/browser-runtime.py
+COPY native/browser-native-test.c /src/browser-native-test.c
+RUN gcc -O2 -rdynamic -Wall -Wextra -Werror -Wl,-z,relro,-z,now -o /browser-native-test /src/browser-native-test.c -ldl
+
+# Test-only target. The regression executable is absent from production images.
+FROM scratch AS native-test
+COPY --from=browser-dependencies /runtime/ /
+COPY --from=browser-dependencies /browser-native-test /opt/utils/native-test
+USER 10001:10001
+RUN --network=none ["/opt/utils/native-test"]
+ENTRYPOINT ["/opt/utils/native-test"]
+
+FROM scratch AS browser-base
+COPY --from=browser-dependencies /runtime/ /
+# Copying the success marker makes every production build execute the native
+# regressions. The test executable remains confined to the test stage.
+COPY --from=native-test --chmod=0444 /tmp/native-regressions-passed /opt/utils/native-regressions-passed
+ENV HOME=/tmp LANG=C.UTF-8
+USER 10001:10001
+
+FROM browser-base AS benchmark
+COPY --chmod=0555 build/browser-bench /opt/utils/browser-bench
+ENTRYPOINT ["/opt/utils/browser-bench"]
+
+# IAM-only synthetic Lambda probe; no customer URLs or payment calls.
+FROM browser-base AS probe
+COPY --chmod=0555 build/browser-probe/bootstrap /opt/utils/bootstrap
+ENTRYPOINT ["/opt/utils/bootstrap"]
+
+# One-shot HTTP worker for the separate Lambda MicroVMs service.
+FROM browser-base AS microvm
+COPY --chmod=0555 build/html-microvm/bootstrap /opt/utils/bootstrap
+EXPOSE 8080
+ENTRYPOINT ["/opt/utils/bootstrap"]

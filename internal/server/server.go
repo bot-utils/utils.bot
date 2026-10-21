@@ -91,6 +91,14 @@ func (s *Server) Handler() http.Handler {
 			w.Header().Set("X-Request-ID", trace)
 			observed := &observedWriter{ResponseWriter: w, detail: telemetry.Request{Route: telemetry.AccessRoute(r.URL.Path), Method: telemetry.AccessMethod(r.Method), RequestPath: r.URL.EscapedPath(), RequestQuery: r.URL.RawQuery, ForceQuery: r.URL.ForceQuery, Stage: "headers"}}
 			defer func() {
+				if recover() != nil {
+					observed.detail.RecoveredPanic = true
+					observed.detail.Code = "service_error"
+					observed.writeFailed = true
+					if observed.status == 0 {
+						write(observed, 502, map[string]string{"error": "service_error"})
+					}
+				}
 				telemetry.RequestDetailSummary(r.Context(), observed.status, observed.writeFailed, observed.settled, observed.fallback, start, observed.detail)
 			}()
 			w = observed
@@ -242,6 +250,9 @@ func (s *Server) pdf(w http.ResponseWriter, r *http.Request) {
 	// Local cleanup happens on every path; the standard net/http server also isolates handler panics.
 	defer func() {
 		if recover() != nil {
+			if observed, ok := w.(*observedWriter); ok {
+				observed.detail.RecoveredPanic = true
+			}
 			slog.Error("request failed", "reason", "handler_panic", "request_id", telemetry.Trace(r.Context()))
 			write(w, 502, map[string]string{"error": "service_error"})
 		}

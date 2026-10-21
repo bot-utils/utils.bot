@@ -23,12 +23,27 @@ type paymentService interface {
 	Handle(context.Context, protocol.PaymentRequest) protocol.PaymentResponse
 }
 
-type paymentHandler struct{ service paymentService }
+type paymentHandler struct {
+	service paymentService
+	html    paymentService
+}
+
+func (h paymentHandler) Handle(ctx context.Context, r protocol.PaymentRequest) protocol.PaymentResponse {
+	switch r.Tool {
+	case "":
+		return h.service.Handle(ctx, r)
+	case "html":
+		if h.html != nil {
+			return h.html.Handle(ctx, r)
+		}
+	}
+	return protocol.PaymentResponse{Status: 400, Error: "invalid_payment_operation"}
+}
 
 func handler(service paymentService) lambda.Handler { return paymentHandler{service: service} }
 
 var paymentRequestFields = map[string]bool{
-	"traceID": true, "verifyOnly": true, "checkDocument": true, "documentFailed": true,
+	"tool": true, "traceID": true, "verifyOnly": true, "checkDocument": true, "documentFailed": true,
 	"recordOutcome": true, "header": true, "bodySHA256": true, "bodyLength": true, "deadline": true,
 }
 
@@ -56,7 +71,7 @@ func (h paymentHandler) Invoke(ctx context.Context, payload []byte) ([]byte, err
 		response = protocol.PaymentResponse{Status: 400, Error: "invalid_payment_request"}
 	} else {
 		// Payment rejection is response data, not a Lambda invocation failure.
-		response = h.service.Handle(ctx, request)
+		response = h.Handle(ctx, request)
 	}
 	return json.Marshal(response)
 }
@@ -102,5 +117,17 @@ func main() {
 		log.Fatal("missing payment configuration")
 	}
 	service := payment.Service{Store: payment.DynamoStore{Client: dynamodb.NewFromConfig(cfg), Table: table}, Facilitator: facilitator, Resource: resource, Config: paymentConfig}
-	lambda.StartHandler(handler(service))
+	h := paymentHandler{service: service}
+	if resource := os.Getenv("HTML_RESOURCE_URL"); resource != "" {
+		htmlConfig := paymentConfig.ForHTML()
+		var htmlProvider payment.Facilitator = payment.MockFacilitator{}
+		if htmlConfig.Mode() != protocol.ModeMock {
+			htmlProvider, err = client.ForPayments(htmlConfig)
+			if err != nil {
+				log.Fatal("HTML payment configuration unavailable")
+			}
+		}
+		h.html = payment.Service{Store: service.Store, Facilitator: htmlProvider, Resource: resource, Config: htmlConfig}
+	}
+	lambda.StartHandler(h)
 }

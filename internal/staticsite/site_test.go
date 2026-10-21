@@ -11,6 +11,7 @@ import (
 
 	"pdfservice/internal/docs"
 	"pdfservice/internal/protocol"
+	"pdfservice/internal/serviceinfo"
 )
 
 func TestStaticBundleMatchesTrustedLiveRendererAndContainsNoOperatorData(t *testing.T) {
@@ -53,6 +54,14 @@ func TestStaticBundleMatchesTrustedLiveRendererAndContainsNoOperatorData(t *test
 	if len(b.Objects) < 10 || len(b.RequestCode) > 10240 || strings.Contains(b.RequestCode, "203.0.113.99") == false {
 		t.Fatal("incomplete private bundle")
 	}
+	if got := string(objects[b.Routes["/readme"].Key].Body); got != serviceinfo.Markdown() {
+		t.Fatal("static website dropped or changed the shared README")
+	}
+	for _, path := range []string{"/", "/docs", "/info", "/terms"} {
+		if !strings.Contains(string(objects[b.Routes[path].Key].Body), "/docs#quickstart") {
+			t.Error("published static page is missing the quickstart link", path)
+		}
+	}
 }
 func TestStaticViewerGateNegotiatesAndNeverForwardsCustomerData(t *testing.T) {
 	if _, e := exec.LookPath("node"); e != nil {
@@ -91,6 +100,31 @@ func TestStaticExportRejectsWrongAPIOrOwner(t *testing.T) {
 	for _, c := range [][2]string{{"https://evil.invalid/v1/pdf/text", "203.0.113.99"}, {protocol.APIOrigin + "/v1/pdf/text", "0.0.0.0/0"}} {
 		if _, e := Build(c[0], c[1], protocol.Config{}); e == nil {
 			t.Fatal("unsafe configuration accepted")
+		}
+	}
+}
+
+func TestHTMLStaticSiteRedirectsOnlyEnabledToolAndNeverReadsBody(t *testing.T) {
+	if _, e := exec.LookPath("node"); e != nil {
+		t.Skip("node unavailable")
+	}
+	for _, enabled := range []bool{false, true} {
+		build := Build
+		if enabled {
+			build = BuildWithHTML
+		}
+		b, err := build(protocol.APIOrigin+"/v1/pdf/text", "203.0.113.99", protocol.Config{}.WithHTMLJavaScript(true))
+		if err != nil {
+			t.Fatal(err)
+		}
+		check := `const r={method:'POST',uri:'/v1/html/markdown',headers:{},querystring:{}};Object.defineProperty(r,'body',{get(){throw Error('source URL/body inspected at edge')}});const out=handler({viewer:{ip:'203.0.113.99'},request:r});`
+		if enabled {
+			check += `if(out.statusCode!==307||out.headers.location.value!=='https://api.utils.bot/v1/html/markdown')throw Error('HTML redirect missing');`
+		} else {
+			check += `if(out.statusCode!==404)throw Error('private HTML advertised');`
+		}
+		if raw, e := exec.Command("node", "-e", b.RequestCode+check).CombinedOutput(); e != nil {
+			t.Fatalf("%v: %s", e, raw)
 		}
 	}
 }

@@ -12,7 +12,6 @@ import (
 
 	"pdfservice/internal/paths"
 	"pdfservice/internal/protocol"
-	"pdfservice/internal/serviceinfo"
 )
 
 //go:embed frontdoor.js
@@ -47,7 +46,6 @@ func CodeWithConfig(resource, ownerIP string, cfg protocol.Config) (string, erro
 	config, err := json.Marshal(struct {
 		APIResource      string   `json:"apiResource,omitempty"`
 		Public           bool     `json:"public"`
-		ReadmeMarkdown   string   `json:"readmeMarkdown"`
 		PaymentMode      string   `json:"paymentMode"`
 		OwnerIP          string   `json:"ownerIP"`
 		Routes           []string `json:"routes"`
@@ -56,7 +54,7 @@ func CodeWithConfig(resource, ownerIP string, cfg protocol.Config) (string, erro
 		MaxPaymentHeader int      `json:"maxPaymentHeader"`
 		LargeAmount      string   `json:"largeAmount"`
 		SmallPDFLimit    int      `json:"smallPDFLimit"`
-	}{apiResource, cfg.PublicAccess(), serviceinfo.Markdown(), cfg.Mode(), ownerIP, Routes, string(body), protocol.MaxPDF, protocol.MaxPaymentHeader, protocol.LargeAmount, protocol.SmallPDFLimit})
+	}{apiResource, cfg.PublicAccess(), cfg.Mode(), ownerIP, Routes, string(body), protocol.MaxPDF, protocol.MaxPaymentHeader, protocol.LargeAmount, protocol.SmallPDFLimit})
 	if err != nil {
 		return "", err
 	}

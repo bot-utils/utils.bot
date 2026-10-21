@@ -8,12 +8,12 @@
 </section>
 <section class="agent-reference" aria-labelledby="benefits-title"><h2 id="benefits-title">Less setup. More useful results.</h2><ul>{{range .Benefits}}<li>{{.}}</li>{{end}}</ul><p>{{.Audience}}</p></section>
 <section id="tools" class="tool-directory" aria-labelledby="tools-title">
-<div class="section-heading"><h2 id="tools-title">Available tools</h2><span>Starting with documents</span></div>
+<div class="section-heading"><h2 id="tools-title">Available tools</h2><span>Pay per use</span></div>
 <ul class="tool-list">{{range .Tools}}
 <li><h3><a href="{{.DocsURL}}">{{.Name}} <span aria-hidden="true">↗</span></a></h3><p>{{.Summary}}</p><p class="route"><code>{{.Method}} {{.Route}}</code></p></li>
 {{end}}</ul>
 {{if .PriceNote}}<p class="directory-note">{{.PriceNote}}</p>{{end}}
-<p class="directory-note">Each tool’s API reference explains its process, payment flow, limits, privacy and security.</p>
+<p class="directory-note">Each tool’s API reference explains its process, payment flow, limits, privacy and security. <a href="/docs#quickstart">Make your first paid call</a>.</p>
 </section>
 <aside class="access-note" aria-label="Access status"><p><strong>{{.PaymentStatus}}.</strong>{{if not .Public}} Public API access has not opened yet.{{end}}</p></aside>
 <section class="agent-reference" aria-labelledby="agent-title"><h2 id="agent-title">For agents</h2><p>Read the <a href="/openapi">OpenAPI YAML</a> or <a href="/openapi/json">JSON specification</a> for the complete API contract. Read the <a href="/info">privacy and processing rules</a> and <a href="/terms">terms of service</a>.</p></section>

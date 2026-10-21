@@ -43,14 +43,23 @@ type pageData struct {
 // parameters can configure templates, URLs, scripts or the OpenAPI document.
 func New(resource string) http.Handler { return NewWithConfig(resource, protocol.Config{}) }
 func NewWithConfig(resource string, cfg protocol.Config) http.Handler {
+	return newWithHTML(resource, cfg, false)
+}
+func NewWithHTML(resource string, cfg protocol.Config) http.Handler {
+	return newWithHTML(resource, cfg, true)
+}
+func newWithHTML(resource string, cfg protocol.Config, html bool) http.Handler {
 	base := protocol.WebsiteBase(resource)
 	apiBase := strings.TrimSuffix(resource, "/v1/pdf/text")
 	spec := baseSpec(cfg)
+	if html {
+		configureHTMLSpec(spec, base, cfg)
+	}
 	spec["servers"] = []map[string]string{{"url": apiBase, "description": endpointDescription(cfg)}}
 	if apiBase != base {
 		configureRegionalSpec(spec)
 		for path, raw := range spec["paths"].(map[string]any) {
-			if path != "/v1/pdf/text" {
+			if path != "/v1/pdf/text" && path != "/v1/html/markdown" {
 				raw.(map[string]any)["servers"] = []map[string]string{{"url": base}}
 			}
 		}
@@ -60,6 +69,8 @@ func NewWithConfig(resource string, cfg protocol.Config) http.Handler {
 		{"minBytes": protocol.SmallPDFLimit + 1, "maxBytes": protocol.MaxPDF, "requirements": cfg.ForSize(protocol.MaxPDF).Requirements()},
 	}}
 	spec["info"].(map[string]any)["termsOfService"] = base + "/terms"
+	configureQuickstart(spec, base, apiBase, cfg)
+
 	spec["externalDocs"] = map[string]string{"url": base + "/docs", "description": "Interactive API reference"}
 	specJSON, err := json.MarshalIndent(spec, "", "  ")
 	if err != nil {
@@ -72,11 +83,14 @@ func NewWithConfig(resource string, cfg protocol.Config) http.Handler {
 	about := serviceinfo.Details()
 	readmeMarkdown := []byte(serviceinfo.Markdown())
 	metadata := "Tools for AI agents: save setup and tokens, offload compute and get predictable structured results. Pay per use; inspect our source. Starting with PDF text extraction."
+	if html {
+		metadata = "Tools for AI agents: extract PDF text and convert JavaScript-rendered URLs to Markdown. Save setup, tokens and local compute. Pay per use; inspect our source."
+	}
 	structured, err := json.Marshal(map[string]any{
 		"@context": "https://schema.org",
 		"@graph": []any{
 			map[string]any{"@type": "WebSite", "@id": base + "/#website", "url": base + "/", "name": "utils.bot", "description": metadata, "sameAs": []string{serviceinfo.RepositoryURL}},
-			map[string]any{"@type": "WebPage", "@id": base + "/#webpage", "url": base + "/", "name": "AI agent tools and PDF text extraction | utils.bot", "description": metadata, "isPartOf": map[string]string{"@id": base + "/#website"}},
+			map[string]any{"@type": "WebPage", "@id": base + "/#webpage", "url": base + "/", "name": "Tools for AI agents | utils.bot", "description": metadata, "isPartOf": map[string]string{"@id": base + "/#website"}},
 		},
 	})
 	if err != nil {
@@ -86,8 +100,11 @@ func NewWithConfig(resource string, cfg protocol.Config) http.Handler {
 	priceNote := ""
 	if cfg.Mode() == protocol.ModeBase {
 		priceNote = "PDF pricing: " + protocol.PricingDescription + ". Successful partial or blank results are charged the full fee; parsing failures are not charged."
+		if html {
+			priceNote += " URL to Markdown: 0.01 USDC per confirmed conversion."
+		}
 	}
-	data := pageData{Benefits: about.Benefits, Audience: about.Audience, Repository: serviceinfo.RepositoryURL, Transparency: about.Transparency, PriceNote: priceNote, Public: cfg.PublicAccess(), Pitch: about.Summary, Robots: robotsDirective(cfg), AgentMessage: about.Message, PaymentStatus: status, PaymentDetails: details, Availability: availability, Title: "AI agent tools and PDF text extraction | utils.bot", Description: metadata, Canonical: base + "/", Base: base, Resource: resource, Tools: toolsFromSpec(spec), Structured: template.JS(structured)}
+	data := pageData{Benefits: about.Benefits, Audience: about.Audience, Repository: serviceinfo.RepositoryURL, Transparency: about.Transparency, PriceNote: priceNote, Public: cfg.PublicAccess(), Pitch: about.Summary, Robots: robotsDirective(cfg), AgentMessage: about.Message, PaymentStatus: status, PaymentDetails: details, Availability: availability, Title: "Tools for AI agents | utils.bot", Description: metadata, Canonical: base + "/", Base: base, Resource: resource, Tools: toolsFromSpec(spec), Structured: template.JS(structured)}
 	render := func(name string, data pageData) []byte {
 		var out bytes.Buffer
 		if err := pages.ExecuteTemplate(&out, name, data); err != nil {
@@ -97,12 +114,21 @@ func NewWithConfig(resource string, cfg protocol.Config) http.Handler {
 	}
 	home := render("home", data)
 	data.AgentMessage = ""
-	data.Title, data.Description, data.Canonical, data.Structured, data.Swagger = "API reference | utils.bot", "Interactive API reference for the utils.bot PDF text extraction API. Inspect request and response schemas, x402 payment headers, limits and error codes.", base+"/docs", "", true
+	data.Title, data.Description, data.Canonical, data.Structured, data.Swagger = "API reference | utils.bot", "Interactive API reference for utils.bot tools. Inspect request and response schemas, x402 payment headers, limits and error codes.", base+"/docs", "", true
 	swagger := render("swagger", data)
 	data.Title, data.Description, data.Canonical, data.Swagger = "Terms, privacy and information | utils.bot", "Terms, privacy, payments, document limits, retries and copyright for the utils.bot API.", base+"/info", false
 	information := []byte(informationMarkdown(spec))
 	terms := []byte(termsMarkdown(spec))
 	discovery := discoveryForAPI(base, apiBase, cfg)
+	if html {
+		d := discovery["/llms.txt"]
+		rendering := "HTTPS HTML only, no JavaScript or uploaded HTML."
+		if cfg.HTMLJavaScript() {
+			rendering = "HTTPS URL input with bounded JavaScript rendering; no uploaded HTML, login or interaction. One additional second after page load, within the 15-second fetch/render budget."
+		}
+		d.Body += "\n## URL to Markdown\n\nPOST " + apiBase + "/v1/html/markdown with JSON containing a url. " + rendering + " 0.01 USDC collected after conversion. Blocks HaGeZi threat-only and CERT Polska domains, including redirects. Read the operation in /openapi for all limits, privacy, charging and retry rules.\n"
+		discovery["/llms.txt"] = d
+	}
 	// Keep the multi-MiB Swagger assets shared across requests.
 	assets := make(map[string][]byte)
 	entries, err := files.ReadDir("assets")

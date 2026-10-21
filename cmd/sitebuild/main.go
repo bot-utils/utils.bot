@@ -20,7 +20,25 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	b, err := staticsite.Build(os.Getenv("RESOURCE_URL"), *owner, cfg)
+	switch os.Getenv("PDF_HTML_JAVASCRIPT") {
+	case "", "0":
+	case "1":
+		if os.Getenv("PDF_ENABLE_HTML") != "1" {
+			fail(fmt.Errorf("JavaScript requires the HTML draft"))
+		}
+		cfg = cfg.WithHTMLJavaScript(true)
+	default:
+		fail(fmt.Errorf("PDF_HTML_JAVASCRIPT must be 0 or 1"))
+	}
+	build := staticsite.Build
+	switch os.Getenv("PDF_ENABLE_HTML") {
+	case "", "0":
+	case "1":
+		build = staticsite.BuildWithHTML
+	default:
+		fail(fmt.Errorf("PDF_ENABLE_HTML must be 0 or 1"))
+	}
+	b, err := build(os.Getenv("RESOURCE_URL"), *owner, cfg)
 	if err != nil {
 		fail(err)
 	}

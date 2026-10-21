@@ -9,9 +9,25 @@ import (
 
 	x402 "github.com/x402-foundation/x402/go/v2"
 	"github.com/x402-foundation/x402/go/v2/types"
+
+	"pdfservice/internal/htmllimits"
 )
 
 const (
+	MaxHTMLURL              = htmllimits.MaxHTMLURL
+	MaxHTMLHostLabels       = htmllimits.MaxHTMLHostLabels
+	MaxHTMLRedirects        = htmllimits.MaxHTMLRedirects
+	MaxHTMLTokens           = htmllimits.MaxHTMLTokens
+	MaxHTMLToken            = htmllimits.MaxHTMLToken
+	MaxHTMLTitle            = htmllimits.MaxHTMLTitle
+	HTMLFetchSeconds        = htmllimits.HTMLFetchSeconds
+	HTMLWorkerSeconds       = htmllimits.HTMLWorkerSeconds
+	HTMLRequestSeconds      = htmllimits.HTMLRequestSeconds
+	HTMLPath                = htmllimits.HTMLPath
+	MaxHTMLRequest          = htmllimits.MaxHTMLRequest
+	MaxHTMLSource           = htmllimits.MaxHTMLSource
+	MaxMarkdown             = htmllimits.MaxMarkdown
+	MaxHTMLResult           = htmllimits.MaxHTMLResult
 	FailedParseWindow       = time.Hour
 	RequestTimeout          = 90 * time.Second
 	MinimumParseBudget      = 45 * time.Second
@@ -28,6 +44,7 @@ const (
 )
 
 type PaymentRequest struct {
+	Tool           string `json:"tool,omitempty"`
 	TraceID        string `json:"traceID,omitempty"`
 	VerifyOnly     bool   `json:"verifyOnly,omitempty"`
 	CheckDocument  bool   `json:"checkDocument,omitempty"`

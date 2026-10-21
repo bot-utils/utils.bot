@@ -25,19 +25,19 @@ function representation(value) {
 function handler(event) {
  var r=event.request;
  if(!config.public && (!event.viewer || event.viewer.ip!==config.owner))return reply(403,'not_public');
- var uri=r.uri,api=uri==='/v1/pdf/text';
+ var uri=r.uri,api=Object.prototype.hasOwnProperty.call(config.apis,uri);
  if(r.headers.accept && r.headers.accept.value.length>512)return reply(400,'accept_header_too_large');
  if(uri!=='/health' && !api && !Object.prototype.hasOwnProperty.call(config.routes,uri))return reply(404,'not_found');
  if(r.method!=='GET' && r.method!=='HEAD' && !(api&&r.method==='POST'))return reply(405,'method_not_allowed',{allow:api?'GET, HEAD, POST':'GET, HEAD'});
  if(Object.keys(r.querystring||{}).length || /%/.test(uri))return reply(400,'noncanonical_request_url');
  if(r.headers.range || r.headers['if-range'])return reply(400,'range_not_supported');
- if(api && r.method==='POST')return reply(307,'use_regional_api',{location:config.api});
+ if(api && r.method==='POST')return reply(307,'use_regional_api',{location:config.apis[uri]});
  if(r.headers['transfer-encoding'] || (r.headers['content-length'] && r.headers['content-length'].value!=='0'))return reply(400,'unexpected_request_body');
  var route=config.routes[uri];
  if(uri==='/' || api) {
   var format=representation(r.headers.accept?r.headers.accept.value:'');
   if(!format)return reply(406,'unsupported_representation');
-  if(format==='html' && api)return reply(308,'documentation',{location:'/docs'});
+  if(format==='html' && api)return reply(308,'documentation',{location:uri==='/v1/html/markdown'?'/docs#/Tools/htmlToMarkdown':'/docs'});
   route=config.routes[format==='html'?'/':format==='json'?'@json':'@yaml'];
  }
  // Origin receives only a fixed object key (or /health), no viewer cookies,

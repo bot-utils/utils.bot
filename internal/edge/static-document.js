@@ -1,4 +1,5 @@
 function reply(status, error, extra) {
+    console.log('telemetry=summary role=edge outcome=response status='+status+' code='+error);
     var h = {'content-type':{value:'application/json'},'cache-control':{value:'no-store'},'x-content-type-options':{value:'nosniff'}};
     if (extra) { h.allow = {value:extra}; }
     return {statusCode:status,headers:h,body:JSON.stringify({error:error})};
