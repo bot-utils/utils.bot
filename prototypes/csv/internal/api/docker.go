@@ -8,7 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -20,6 +23,61 @@ import (
 var imagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9./:_@-]{0,255}$`)
 
 type Docker struct{ Image string }
+
+// Pin each job, including cleanup, to the verified local daemon. Never allow
+// Docker's ambient host/context selection to receive uploaded file data.
+type localDockerClient struct{ endpoint string }
+
+func localDocker(ctx context.Context) (localDockerClient, error) {
+	for _, key := range []string{"DOCKER_HOST", "DOCKER_CONTEXT"} {
+		if _, present := os.LookupEnv(key); present {
+			return localDockerClient{}, errors.New("Docker endpoint overrides are not supported")
+		}
+	}
+	check, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(check, "docker", "context", "inspect").Output()
+	if err != nil {
+		return localDockerClient{}, err
+	}
+	endpoint, err := localDockerEndpoint(out)
+	if err != nil {
+		return localDockerClient{}, err
+	}
+	u, _ := url.Parse(endpoint)
+	info, err := os.Stat(u.Path)
+	if err != nil || info.Mode()&os.ModeSocket == 0 {
+		return localDockerClient{}, errors.New("local Docker socket is unavailable")
+	}
+	return localDockerClient{endpoint: endpoint}, nil
+}
+
+func localDockerEndpoint(raw []byte) (string, error) {
+	var contexts []struct {
+		Endpoints map[string]struct{ Host string }
+	}
+	if json.Unmarshal(raw, &contexts) != nil || len(contexts) != 1 {
+		return "", errors.New("invalid Docker context")
+	}
+	endpoint := contexts[0].Endpoints["docker"].Host
+	u, err := url.Parse(endpoint)
+	home, homeErr := os.UserHomeDir()
+	if err != nil || homeErr != nil || u.Scheme != "unix" || u.Host != "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.RawPath != "" || (u.Path != "/var/run/docker.sock" && u.Path != filepath.Join(home, ".docker", "run", "docker.sock") && u.Path != filepath.Join(home, ".colima", "default", "docker.sock")) {
+		return "", errors.New("Docker context must use a supported local socket")
+	}
+	return endpoint, nil
+}
+
+func (d localDockerClient) command(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "docker", append([]string{"--host", d.endpoint}, args...)...)
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, "DOCKER_HOST=") && !strings.HasPrefix(entry, "DOCKER_CONTEXT=") {
+			cmd.Env = append(cmd.Env, entry)
+		}
+	}
+	return cmd
+}
+
 type bounded struct {
 	mu sync.Mutex
 	bytes.Buffer
@@ -65,7 +123,11 @@ func (d Docker) run(ctx context.Context, job Job, mode string) (result tabular.R
 	if !imagePattern.MatchString(d.Image) {
 		return result, &tabular.Error{Code: "worker_unavailable", Status: 503}
 	}
-	image, e := resolveImage(ctx, d.Image)
+	client, e := localDocker(ctx)
+	if e != nil {
+		return result, &tabular.Error{Code: "worker_unavailable", Status: 503}
+	}
+	image, e := client.resolveImage(ctx, d.Image)
 	if e != nil {
 		return result, &tabular.Error{Code: "worker_unavailable", Status: 503}
 	}
@@ -80,7 +142,7 @@ func (d Docker) run(ctx context.Context, job Job, mode string) (result tabular.R
 	label := hex.EncodeToString(id[:])
 	name := "utils-csv-" + label
 	defer func() {
-		if !cleanup(name, label) {
+		if !client.cleanup(name, label) {
 			result = tabular.Result{}
 			err = &tabular.Error{Code: "worker_cleanup_failed", Status: 503}
 		}
@@ -90,7 +152,7 @@ func (d Docker) run(ctx context.Context, job Job, mode string) (result tabular.R
 	createCtx, createCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	args := createArgs(image, name, label)
 	args[len(args)-1] = mode
-	created := exec.CommandContext(createCtx, "docker", args...)
+	created := client.command(createCtx, args...)
 	created.Stdout = io.Discard
 	created.Stderr = io.Discard
 	e = created.Run()
@@ -100,7 +162,7 @@ func (d Docker) run(ctx context.Context, job Job, mode string) (result tabular.R
 	}
 	work, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := exec.CommandContext(work, "docker", "start", "--attach", "--interactive", name)
+	cmd := client.command(work, "start", "--attach", "--interactive", name)
 	cmd.Stdin = bytes.NewReader(payload)
 	output := &bounded{cap: tabular.MaxOutput + 4096, cancel: cancel}
 	cmd.Stdout = output
@@ -118,7 +180,7 @@ func (d Docker) run(ctx context.Context, job Job, mode string) (result tabular.R
 		return result, &tabular.Error{Code: "output_byte_limit", Status: 413}
 	}
 	if e != nil {
-		status := inspect(name)
+		status := client.inspect(name)
 		if status.exists && status.oom {
 			return result, &tabular.Error{Code: "worker_memory_limit", Status: 413}
 		}
@@ -189,9 +251,17 @@ func validResult(op string, r tabular.Result) bool {
 	return e == nil && len(encoded) <= tabular.MaxOutput
 }
 func resolveImage(ctx context.Context, name string) (string, error) {
+	client, err := localDocker(ctx)
+	if err != nil {
+		return "", err
+	}
+	return client.resolveImage(ctx, name)
+}
+
+func (d localDockerClient) resolveImage(ctx context.Context, name string) (string, error) {
 	check, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	out, e := exec.CommandContext(check, "docker", "image", "inspect", name).Output()
+	out, e := d.command(check, "image", "inspect", name).Output()
 	if e != nil {
 		return "", e
 	}
@@ -212,10 +282,10 @@ func resolveImage(ctx context.Context, name string) (string, error) {
 
 type containerState struct{ known, exists, running, oom bool }
 
-func inspect(name string) containerState {
+func (d localDockerClient) inspect(name string) containerState {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	out, e := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{.State.Running}} {{.State.OOMKilled}}", name).CombinedOutput()
+	out, e := d.command(ctx, "inspect", "--format", "{{.State.Running}} {{.State.OOMKilled}}", name).CombinedOutput()
 	if e != nil {
 		message := strings.ToLower(string(out))
 		if strings.Contains(message, "no such object") || strings.Contains(message, "no such container") {
@@ -230,24 +300,31 @@ func inspect(name string) containerState {
 	return containerState{known: true, exists: true, running: fields[0] == "true", oom: fields[1] == "true"}
 }
 func cleanup(name, label string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	client, err := localDocker(ctx)
+	return err == nil && client.cleanup(name, label)
+}
+
+func (d localDockerClient) cleanup(name, label string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	// Only this random-labelled job is eligible for pruning. No force deletion
 	// of a running worker, broad prune, source mount or customer temporary file.
-	_ = exec.CommandContext(ctx, "docker", "kill", name).Run()
-	s := inspect(name)
+	_ = d.command(ctx, "kill", name).Run()
+	s := d.inspect(name)
 	if !s.known || s.running {
 		return false
 	}
 	if !s.exists {
 		return true
 	}
-	cmd := exec.CommandContext(ctx, "docker", "container", "prune", "--force", "--filter", "label=utils.bot.csv.prototype=true", "--filter", "label=utils.bot.csv.job="+label)
+	cmd := d.command(ctx, "container", "prune", "--force", "--filter", "label=utils.bot.csv.prototype=true", "--filter", "label=utils.bot.csv.job="+label)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if cmd.Run() != nil {
 		return false
 	}
-	s = inspect(name)
+	s = d.inspect(name)
 	return s.known && !s.exists
 }

@@ -181,7 +181,7 @@ deadline. No customer bytes are placed in container configuration or commands.
 
 ## Run locally
 
-Requires Go 1.26.10 and Docker Desktop on this arm64 Mac. No new dependencies,
+Requires Go 1.26.10 and a local Docker daemon (Docker Desktop or the default Colima VM on this arm64 Mac). The supervisor rejects `DOCKER_HOST` and `DOCKER_CONTEXT` overrides, verifies that the selected context uses `/var/run/docker.sock`, `~/.docker/run/docker.sock`, or `~/.colima/default/docker.sock`, and pins every job command (including cleanup) to that local socket. Remote Docker contexts are unsupported. A trusted local operator controls the daemon and socket; this does not protect against an operator deliberately forwarding that socket elsewhere. No new dependencies,
 network image pulls, production configuration, IAM, payment or funded settlement.
 
 ```sh
