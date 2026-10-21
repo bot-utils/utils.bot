@@ -50,9 +50,24 @@ def docker(args, timeout=60):
     return result
 
 
+def cleanup_scratch(paths):
+    clean = True
+    for path in paths:
+        try:
+            if path.exists():
+                subprocess.run(['trash', str(path)], check=True, capture_output=True)
+            if path.exists():
+                clean = False
+        except (OSError, subprocess.SubprocessError):
+            clean = False
+    return clean
+
+
 def main():
     global _endpoint
     _endpoint = local_endpoint()
+    if os.getuid() == 0:
+        raise RuntimeError("local diagnostic must run as a nonroot user")
     parser = argparse.ArgumentParser()
     parser.add_argument('--fixtures', required=True)
     parser.add_argument('--output', required=True)
@@ -73,14 +88,18 @@ def main():
     random.Random(20261021).shuffle(plan)
     measurements = []
     owned = []
+    scratch = []
     try:
         for repeat, tier, operation in plan:
             name = 'utils-csv-trial-' + label[:10] + '-' + str(len(measurements))
             work = output / name
-            work.mkdir(mode=0o777)
-            work.chmod(0o777)  # Dedicated synthetic scratch only, never content/credentials.
+            work.mkdir(mode=0o700)
+            scratch.append(work)
+            work.chmod(0o700)
+            # Match the nonroot host UID so the bind mount needs no broad ACL.
             command = ['create', '--name', name, '--label', 'utils.bot.csv.python.trial=' + label,
                        '--pull=never', '--network=none', '--ipc=none', '--read-only', '--cap-drop=ALL',
+                       '--user=' + str(os.getuid()) + ':' + str(os.getgid()),
                        '--security-opt=no-new-privileges', '--pids-limit=32', '--log-driver=none',
                        '--cpus=' + ('.25' if tier == 'small' else '4'),
                        '--memory=' + ('1g' if tier == 'small' else '16g'),
@@ -90,8 +109,8 @@ def main():
                        '--operation', operation, '--left', '/data/left.csv', '--work', '/work/job']
             if operation == 'join':
                 command += ['--right', '/data/right.csv']
-            docker(command)
             owned.append(name)
+            docker(command)
             t = time.perf_counter()
             result = json.loads(docker(['start', '--attach', name], timeout=900).stdout)
             result.update(repeat=repeat, tier=tier, container_elapsed_seconds=time.perf_counter() - t)
@@ -112,15 +131,23 @@ def main():
             # Keep raw metrics and exact checksum; trash generated result/scratch.
             subprocess.run(['trash', str(work)], check=True, capture_output=True)
     finally:
-        for name in owned:
-            subprocess.run(['docker', '--host', _endpoint, 'kill', '--signal=KILL', name], capture_output=True, timeout=15, env={k:v for k,v in os.environ.items() if k not in ('DOCKER_HOST','DOCKER_CONTEXT')})
-        docker(['container', 'prune', '--force', '--filter', 'label=utils.bot.csv.python.trial=' + label])
-        remaining = docker(['ps', '--all', '--filter', 'label=utils.bot.csv.python.trial=' + label,
-                            '--format', '{{.Names}}']).stdout.strip()
-        if remaining:
-            raise RuntimeError('owned container cleanup unconfirmed')
-        (output / 'cleanup.json').write_text(json.dumps({'owned_containers_remaining': 0,
-                                                        'no_aws_calls': True}))
+        containers_clean = False
+        try:
+            for name in owned:
+                subprocess.run(['docker', '--host', _endpoint, 'kill', '--signal=KILL', name],
+                               capture_output=True, timeout=15,
+                               env={k:v for k,v in os.environ.items() if k not in ('DOCKER_HOST','DOCKER_CONTEXT')})
+            docker(['container', 'prune', '--force', '--filter', 'label=utils.bot.csv.python.trial=' + label])
+            remaining = docker(['ps', '--all', '--filter', 'label=utils.bot.csv.python.trial=' + label,
+                                '--format', '{{.Names}}']).stdout.strip()
+            containers_clean = not remaining
+        finally:
+            scratch_clean = cleanup_scratch(scratch)
+            (output / 'cleanup.json').write_text(json.dumps({
+                'owned_containers_remaining': 0 if containers_clean else None,
+                'scratch_paths_remaining': 0 if scratch_clean else None, 'no_aws_calls': True}))
+            if not containers_clean or not scratch_clean:
+                raise RuntimeError('owned container or scratch cleanup unconfirmed')
     for op in ['dedupe', 'join', 'aggregate']:
         for tier in ['small', 'large']:
             runs = [r for r in measurements if r['operation'] == op and r['tier'] == tier]
