@@ -26,7 +26,7 @@ Each endpoint accepts `POST multipart/form-data` with exactly one `options` part
 containing a JSON object and the raw CSV parts listed below. Filenames are ignored.
 Unknown or duplicate parts/JSON keys, case-mismatched field names, null values,
 trailing JSON and content transfer encodings are rejected. No compression,
-base64 upload field, source URL, server path or retained dataset handle is accepted.
+base64 upload field, source URL, server path or retained dataset handle is accepted. MIME epilogue after the final multipart boundary is accepted and discarded; it counts toward the total HTTP body limit and is never passed to the worker.
 
 Successful responses are `application/json`, containing string cells only:
 

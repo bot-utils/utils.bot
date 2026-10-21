@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"utils.bot/csvprototype/internal/tabular"
@@ -227,5 +228,44 @@ func TestWorkerResultShapeAndErrorAllowlist(t *testing.T) {
 		if !found {
 			t.Fatal(want)
 		}
+	}
+}
+
+func TestMultipartEpilogueIsIgnoredAndBoundedBeforeWorker(t *testing.T) {
+	for _, streamed := range []bool{false, true} {
+		called := false
+		s := New(func(ctx context.Context, job Job) (tabular.Result, error) {
+			called = true
+			if len(job.Inputs) != 1 || string(job.Inputs["file"]) != "id\nx\n" {
+				t.Fatal("epilogue reached worker inputs")
+			}
+			return direct(ctx, job)
+		}, nil)
+		r := request(t, "/csv/dedupe", `{"key_columns":["id"],"keep":"first"}`, map[string]string{"file": "id\nx\n"})
+		body := io.MultiReader(r.Body, strings.NewReader(strings.Repeat("IGNORED_EPILOGUE", 1024)))
+		var wire io.Reader = body
+		if streamed {
+			wire = iotest.OneByteReader(body)
+		}
+		r.Body = io.NopCloser(wire)
+		r.ContentLength = -1
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		if w.Code != 200 || !called {
+			t.Fatal("epilogue handling depends on buffering", streamed, w.Code, w.Body.String())
+		}
+	}
+	called := false
+	s := New(func(context.Context, Job) (tabular.Result, error) {
+		called = true
+		return tabular.Result{}, nil
+	}, nil)
+	r := request(t, "/csv/dedupe", `{"key_columns":["id"],"keep":"first"}`, map[string]string{"file": "id\nx\n"})
+	r.Body = io.NopCloser(io.MultiReader(r.Body, strings.NewReader(strings.Repeat("x", MaxRequest+1))))
+	r.ContentLength = -1
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != 413 || called || !strings.Contains(w.Body.String(), "request_limit") {
+		t.Fatal("oversized epilogue reached worker", w.Code, called, w.Body.String())
 	}
 }

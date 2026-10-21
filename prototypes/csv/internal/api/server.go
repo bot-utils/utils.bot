@@ -10,7 +10,6 @@ import (
 	"mime"
 	"net"
 	"net/http"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -189,13 +188,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(&tabular.Error{Code: "invalid_parts", Status: 400})
 		return
 	}
-	// Consume the remaining wire under the same byte cap, including data after
-	// the closing boundary. Multipart's already-buffered epilogue is ignored.
-	if rest, e := io.ReadAll(r.Body); e != nil {
+	// MIME permits epilogue after the closing boundary. Discard it consistently,
+	// whether multipart.Reader buffered it or left it on the underlying body.
+	// Drain under the same total byte cap before starting any worker.
+	if _, e := io.Copy(io.Discard, r.Body); e != nil {
 		fail(partError(e))
-		return
-	} else if len(strings.TrimSpace(string(rest))) != 0 {
-		fail(&tabular.Error{Code: "invalid_multipart", Status: 400})
 		return
 	}
 	if r.Context().Err() != nil {
