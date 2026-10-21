@@ -91,11 +91,10 @@ func executionServiceBoundaryStatements(account, region, zone, distributionID, o
 		"arn:aws:ecs:"+region+":"+account+":*/*agent-pdf-mock*",
 		"arn:aws:ecs:"+region+":"+account+":*/*AgentPdfMock-*",
 		"arn:aws:elasticloadbalancing:"+region+":"+account+":*/*agent-pdf-mock*",
-		"arn:aws:dynamodb:"+region+":"+account+":table/agent-pdf-mock-payments",
-		"arn:aws:dynamodb:"+region+":"+account+":table/AgentPdfMock-*",
-		"arn:aws:lambda:"+region+":"+account+":function:agent-pdf-mock-payment*",
+		"arn:aws:dynamodb:"+region+":"+account+":table/agent-pdf-*-payments",
+		"arn:aws:lambda:"+region+":"+account+":*:agent-pdf-*",
+		"arn:aws:events:"+region+":"+account+":rule/agent-pdf-html-threat-refresh",
 		"arn:aws:logs:"+region+":"+account+":log-group:/agent-pdf/mock/*",
-		"arn:aws:logs:"+region+":"+account+":log-group:AgentPdfMock-*",
 		"arn:aws:sns:"+region+":"+account+":agent-pdf-alerts",
 		"arn:aws:wafv2:us-east-1:"+account+":global/ipset/agent-pdf-owner/*",
 		"arn:aws:wafv2:us-east-1:"+account+":global/webacl/agent-pdf-edge/*",
@@ -121,14 +120,15 @@ func executionServiceBoundaryStatements(account, region, zone, distributionID, o
 	statements := []awsiam.PolicyStatement{
 		// Identity policies still enumerate asset reads. Compact the read-only
 		// boundary family to stay within IAM's 6,144-character document limit.
-		allow(jsii.Strings("ecs:*", "elasticloadbalancing:*", "dynamodb:*", "lambda:*", "logs:*", "sns:*", "wafv2:*", "cloudwatch:*", "budgets:*", "cloudfront:*", "acm:*", "route53:*", "s3:GetObject*", "ssm:GetParameters"), owned),
-		// These APIs do not support resource-level authorization. The attached
-		// identity policies retain their exact action, region, domain and tag limits.
-		allow(jsii.Strings("acm:RequestCertificate", "cloudfront:CreateOriginAccessControl", "application-autoscaling:*ScalableTarget", "application-autoscaling:*ScalingPolicy", "application-autoscaling:*Tag*", "application-autoscaling:Describe*", "cloudwatch:DescribeAlarms", "ecs:DescribeTaskDefinition", "elasticloadbalancing:Describe*", "logs:DescribeLogGroups"), jsii.Strings("*")),
+		allow(jsii.Strings("events:*", "ecs:*", "elasticloadbalancing:*", "dynamodb:*", "lambda:*", "logs:*", "sns:*", "wafv2:*", "cloudwatch:*", "budgets:*", "cloudfront:*", "acm:*", "route53:*", "s3:GetObject*", "ssm:GetParameters"), owned),
+		// Compact this ceiling for APIs needing wildcard scope and managed network
+		// connector passes. Identity policies pin connector ARNs and retain the
+		// exact action, region, domain and tag limits.
+		allow(jsii.Strings("lambda:CreateMicrovmImage", "lambda:TagResource", "lambda:PassNetworkConnector", "acm:RequestCertificate", "cloudfront:CreateOriginAccessControl", "application-autoscaling:*ScalableTarget", "application-autoscaling:*ScalingPolicy", "application-autoscaling:*Tag*", "application-autoscaling:Describe*", "cloudwatch:Describe*", "ecs:Describe*", "elasticloadbalancing:Describe*", "logs:Describe*"), jsii.Strings("*")),
 	}
 	// The attached identity policy enumerates exact bucket-management actions.
-	// This statement is confined to the one public-site bucket, excluding
-	// all objects, bootstrap state, customer data and unrelated buckets.
+	// This covers website/public-threat bucket metadata, excluding objects,
+	// bootstrap state and unrelated buckets.
 	statements = append(statements, staticSiteBoundaryStatement(account, region))
 
 	return append(statements, networkBoundaryStatements(account, region)...)

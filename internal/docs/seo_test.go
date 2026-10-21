@@ -32,7 +32,7 @@ func TestHomepageIsCrawlableHTMLWithoutSwaggerOrIdentityGuessing(t *testing.T) {
 		if strings.Contains(body, `src="/assets/swagger-ui`) || strings.Contains(body, `href="/assets/swagger-ui.css"`) || strings.Contains(body, "openapi.yaml") || strings.Contains(body, "untrusted.invalid") || len(body) > 20<<10 {
 			t.Fatal("homepage bundles Swagger, advertises extension URL, trusts Host or is too large")
 		}
-		for _, required := range []string{`<title>AI agent tools and PDF text extraction | utils.bot</title>`, `<meta name="description"`, `<link rel="canonical" href="https://utils.bot/">`, `href="/openapi"`, `href="/docs"`, `href="/info"`, `<main id="main"`, `A toolbox for<br>AI agents.`, `PDF text extraction`, `href="/docs#/Tools/extractPDFText"`, `Private testing`} {
+		for _, required := range []string{`<title>Tools for AI agents | utils.bot</title>`, `<meta name="description"`, `<link rel="canonical" href="https://utils.bot/">`, `href="/openapi"`, `href="/docs"`, `href="/info"`, `<main id="main"`, `A toolbox for<br>AI agents.`, `PDF text extraction`, `href="/docs#/Tools/extractPDFText"`, `Private testing`} {
 			if !strings.Contains(body, required) {
 				t.Fatal("missing visible content/discovery/metadata", required)
 			}

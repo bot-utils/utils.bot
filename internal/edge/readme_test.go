@@ -3,52 +3,30 @@ package edge
 import (
 	"os/exec"
 	"pdfservice/internal/protocol"
-	"pdfservice/internal/serviceinfo"
+	"strings"
 	"testing"
 )
 
-func TestStaticAboutNeverInvokesOriginOrReadsBody(t *testing.T) {
+func TestReadmeUsesStaticOriginAndDoesNotReadBody(t *testing.T) {
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("node unavailable")
 	}
-	for _, mode := range []string{protocol.ModeMock, protocol.ModeSepolia, protocol.ModeBase} {
-		payTo := "0x2222222222222222222222222222222222222222"
-		if mode == protocol.ModeMock {
-			payTo = ""
-		}
-		cfg, err := protocol.NewConfig(mode, payTo)
-		if err != nil {
-			t.Fatal(err)
-		}
-		code, err := CodeWithConfig("https://utils.bot/v1/pdf/text", "203.0.113.10", cfg)
-		if err != nil {
-			t.Fatal(err)
-		}
-		check := `
-const cases=[['GET',{}, {},'203.0.113.10',200],['HEAD',{}, {},'203.0.113.10',200],['POST',{}, {},'203.0.113.10',405],['GET',{}, {},'198.51.100.8',403],['GET',{}, {x:{value:'x'}},'203.0.113.10',400],['GET',{range:{value:'bytes=0-1'}},{},'203.0.113.10',400]];
-let body;
-for (const [method,headers,querystring,ip,status] of cases) {
- headers['x-agent-pdf-origin']={value:'spoofed-secret'};
- headers['payment-signature']={value:'sensitive-signature'};
- const request={method,uri:'/readme',headers,querystring};
- Object.defineProperty(request,'body',{get(){throw Error('body read')}});
+	code, err := CodeWithConfig("https://utils.bot/v1/pdf/text", "203.0.113.10", protocol.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(code, "readmeMarkdown") || len(code) > 10<<10 {
+		t.Fatal("document inlined into edge code")
+	}
+	check := `
+for(const [method,querystring,headers,ip,status] of [['GET',{}, {},'203.0.113.10',0],['HEAD',{}, {},'203.0.113.10',0],['POST',{}, {},'203.0.113.10',405],['GET',{}, {},'198.51.100.8',403],['GET',{x:{value:'x'}},{},'203.0.113.10',400],['GET',{}, {range:{value:'bytes=0-1'}},'203.0.113.10',400]]) {
+ headers['x-agent-pdf-origin']={value:'spoofed'};headers['payment-signature']={value:'private'};headers.authorization={value:'private'};headers.cookie={value:'private'};
+ const request={method,uri:'/readme',headers,querystring};Object.defineProperty(request,'body',{get(){throw Error('body read')}});
  const result=handler({viewer:{ip},request});
- if(result===request||result.statusCode!==status)throw Error('origin reached or incorrect gate');
- if(result.body.includes('spoofed-secret')||result.body.includes('sensitive-signature'))throw Error('header leaked');
- if(status===200){
-  if(result.headers['content-type'].value!=='text/markdown; charset=utf-8'||result.headers['x-content-type-options'].value!=='nosniff')throw Error('unsafe headers');
-  if(method==='HEAD'&&result.body!=='')throw Error('HEAD body emitted');
-  if(method==='GET')body=result.body;
- }
-}
-console.log(body);
-`
-		raw, err := exec.Command("node", "-e", code+check).CombinedOutput()
-		if err != nil {
-			t.Fatalf("%s: %v %s", mode, err, raw)
-		}
-		if string(raw) != serviceinfo.Markdown()+"\n" {
-			t.Fatal("edge Markdown differs from canonical file")
-		}
+ if((result.statusCode||0)!==status)throw Error('gate changed');
+ if(status===0 && (result!==request || Object.keys(result.headers).some(x=>['x-agent-pdf-origin','payment-signature','authorization','cookie'].includes(x))))throw Error('static request leaked credentials');
+}`
+	if out, err := exec.Command("node", "-e", edgeLogCapture+code+check).CombinedOutput(); err != nil {
+		t.Fatal(err, string(out))
 	}
 }

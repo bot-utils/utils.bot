@@ -41,10 +41,19 @@ type Bundle struct {
 }
 
 func Build(resource, owner string, cfg protocol.Config) (Bundle, error) {
+	return build(resource, owner, cfg, false)
+}
+func BuildWithHTML(resource, owner string, cfg protocol.Config) (Bundle, error) {
+	return build(resource, owner, cfg, true)
+}
+func build(resource, owner string, cfg protocol.Config, html bool) (Bundle, error) {
 	if resource != protocol.APIOrigin+"/v1/pdf/text" || net.ParseIP(owner) == nil || net.ParseIP(owner).To4() == nil || strings.Contains(owner, ":") {
 		return Bundle{}, fmt.Errorf("static site requires canonical regional API and owner IPv4")
 	}
 	h := docs.NewWithConfig(resource, cfg)
+	if html {
+		h = docs.NewWithHTML(resource, cfg)
+	}
 	b := Bundle{Routes: map[string]Route{}}
 	seen := map[string]bool{}
 	render := func(path, accept, name string) error {
@@ -88,12 +97,17 @@ func Build(resource, owner string, cfg protocol.Config) (Bundle, error) {
 		}
 	}
 	sort.Slice(b.Objects, func(i, j int) bool { return b.Objects[i].Key < b.Objects[j].Key })
+	apiPaths := map[string]string{"/v1/pdf/text": resource}
+	if html {
+		apiPaths[protocol.HTMLPath] = protocol.APIOrigin + protocol.HTMLPath
+	}
 	config, _ := json.Marshal(struct {
-		Public bool             `json:"public"`
-		Owner  string           `json:"owner"`
-		API    string           `json:"api"`
-		Routes map[string]Route `json:"routes"`
-	}{cfg.PublicAccess(), owner, resource, b.Routes})
+		Public bool              `json:"public"`
+		Owner  string            `json:"owner"`
+		API    string            `json:"api"`
+		Routes map[string]Route  `json:"routes"`
+		APIs   map[string]string `json:"apis"`
+	}{cfg.PublicAccess(), owner, resource, b.Routes, apiPaths})
 	b.RequestCode = "var config=" + string(config) + ";\n" + requestJS
 	responseConfig, _ := json.Marshal(struct {
 		Public bool   `json:"public"`

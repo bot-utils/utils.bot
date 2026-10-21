@@ -44,7 +44,7 @@ for(const [method,headers,querystring,ip,status] of cases){
 if(handler({viewer:{ip:'203.0.113.10'},request:{method:'GET',uri:'/other',headers:{},querystring:{}}}).statusCode!==404)throw Error('wrong route allowed');
 console.log(body);
 `
-			raw, err := exec.Command("node", "-e", code+script).CombinedOutput()
+			raw, err := exec.Command("node", "-e", edgeLogCapture+code+script).CombinedOutput()
 			if err != nil {
 				t.Fatalf("%v: %s", err, raw)
 			}

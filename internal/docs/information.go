@@ -48,10 +48,10 @@ func policyMarkdown(spec map[string]any, title, introduction string, selected ma
 }
 
 func informationMarkdown(spec map[string]any) string {
-	return policyMarkdown(spec, "information and privacy", "Privacy, security, limits and retries. Read the [service agreement](/terms) and [API specification](/openapi) before paying. The toolbox introduction is at [/readme](/readme).", informationSections)
+	return policyMarkdown(spec, "information and privacy", "Privacy, security, limits and retries. Read the [service agreement](/terms) and [API specification](/openapi) before paying. Start with the [payment quickstart](/docs#quickstart); the [shared README](/readme) includes a runnable client and representative result.", informationSections)
 }
 func termsMarkdown(spec map[string]any) string {
-	return policyMarkdown(spec, "terms of service", "Read these terms, the [privacy and processing rules](/info), and the [API specification and payment quote](/openapi) before authorizing a paid request. Together they describe the purchased service.", termsSections)
+	return policyMarkdown(spec, "terms of service", "Before paying, read this agreement, the [privacy and processing rules](/info), [API contract](/openapi) and payment quote. See the [quickstart](/docs#quickstart) and [runnable client](/readme).", termsSections)
 }
 
 func Information(cfg protocol.Config) string { return informationMarkdown(baseSpec(cfg)) }

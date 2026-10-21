@@ -10,7 +10,7 @@ const (
 // WebsiteBase keeps legal and discovery links on the website when the paid
 // operation uses regional ingress. Other URLs retain local/mock behavior.
 func WebsiteBase(resource string) string {
-	base := strings.TrimSuffix(resource, "/v1/pdf/text")
+	base := strings.TrimSuffix(strings.TrimSuffix(resource, "/v1/pdf/text"), "/v1/html/markdown")
 	if base == APIOrigin {
 		return SiteOrigin
 	}

@@ -14,7 +14,7 @@ import (
 func TestDedicatedExecutionFoundationCannotAdministerItself(t *testing.T) {
 	t.Setenv("PDF_BOUNDARY_API_CERTIFICATE_ARN", "arn:aws:acm:us-east-2:111111111111:certificate/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 	t.Setenv("PDF_BOUNDARY_STATIC_OAC_ID", "EEXAMPLEOAC")
-	t.Setenv("PDF_HOSTED_ZONE_ID", "ZEXAMPLEDNS")
+	t.Setenv("PDF_HOSTED_ZONE_ID", "Z0123456789ABCDEFGHIJK")
 	t.Setenv("PDF_BOUNDARY_CLOUDFRONT_DISTRIBUTION_ID", "EDFDVBD6EXAMPLE")
 	t.Setenv("PDF_BOUNDARY_ORIGIN_REQUEST_POLICY_ID", "11111111-2222-3333-4444-555555555555")
 	t.Setenv("PDF_BOUNDARY_VIEWER_CERTIFICATE_ARN", "arn:aws:acm:us-east-1:111111111111:certificate/11111111-2222-3333-4444-555555555555")
@@ -90,6 +90,14 @@ func TestDedicatedExecutionFoundationCannotAdministerItself(t *testing.T) {
 			}
 			if !strings.Contains(text, "cloudfront:CreateOriginAccessControl") || !strings.Contains(text, ":origin-access-control/EEXAMPLEOAC") || strings.Contains(text, ":origin-access-control/*") {
 				t.Fatal("website OAC creation is missing or its established ID is not pinned")
+			}
+			// Use the resolved policy ARN in the condition: measuring a short
+			// CloudFormation Ref hid a real IAM quota failure.
+			if !strings.Contains(text, namedPolicyArn("111111111111", runtimeBoundaryName)) {
+				t.Fatal("size check requires the fully resolved boundary ARN")
+			}
+			if strings.Contains(text, "log-group:AgentPdfMock-*") {
+				t.Fatal("execution ceiling includes an unused legacy log namespace")
 			}
 			if len(encoded) > 6144 {
 				t.Fatal("execution boundary exceeds the IAM managed-policy size limit", len(encoded))

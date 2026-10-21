@@ -95,9 +95,13 @@ func foundationStack(app awscdk.App, account, region string) awscdk.Stack {
 		ManagedPolicyName: jsii.String(runtimeBoundaryName),
 		Description:       jsii.String("Maximum permissions for PDF Lambda and ECS runtime roles"),
 		Statements: &[]awsiam.PolicyStatement{
-			awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Actions: jsii.Strings("dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"), Resources: jsii.Strings("arn:aws:dynamodb:" + region + ":" + account + ":table/agent-pdf-mock-payments")}),
+			awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Actions: jsii.Strings("dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"), Resources: jsii.Strings("arn:aws:dynamodb:"+region+":"+account+":table/agent-pdf-mock-payments", "arn:aws:dynamodb:"+region+":"+account+":table/agent-pdf-html-test-payments")}),
 			awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Actions: jsii.Strings("ssm:GetParameters"), Resources: jsii.Strings("arn:aws:ssm:us-east-1:"+account+":parameter/pdf/coinbaseAPIKey", "arn:aws:ssm:us-east-1:"+account+":parameter/pdf/coinbaseAPISecret", "arn:aws:ssm:us-east-1:"+account+":parameter/pdf/receiveAddress")}),
-			awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Actions: jsii.Strings("lambda:InvokeFunction"), Resources: jsii.Strings("arn:aws:lambda:" + region + ":" + account + ":function:agent-pdf-mock-payment:live")}),
+			awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Actions: jsii.Strings("lambda:InvokeFunction"), Resources: jsii.Strings("arn:aws:lambda:"+region+":"+account+":function:agent-pdf-mock-payment:live", "arn:aws:lambda:"+region+":"+account+":function:agent-pdf-html-worker:live", "arn:aws:lambda:"+region+":"+account+":function:agent-pdf-html-test-payment:live")}),
+			allow(jsii.Strings("lambda:PassNetworkConnector"), jsii.Strings("arn:aws:lambda:"+region+":aws:network-connector:aws-network-connector:INTERNET_EGRESS", "arn:aws:lambda:"+region+":aws:network-connector:aws-network-connector:ALL_INGRESS")),
+			allow(jsii.Strings("lambda:RunMicrovm", "lambda:GetMicrovm", "lambda:TerminateMicrovm", "lambda:CreateMicrovmAuthToken"), jsii.Strings("arn:aws:lambda:"+region+":"+account+":microvm-image:agent-pdf-html*")),
+			allow(jsii.Strings("s3:GetObject"), jsii.Strings("arn:aws:s3:::cdk-hnb659fds-assets-"+account+"-"+region+"/*")),
+			allow(jsii.Strings("s3:GetObject", "s3:PutObject"), jsii.Strings("arn:aws:s3:::"+threatBucketName(account)+"/threats/v2/*")),
 			awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Actions: jsii.Strings("ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage"), Resources: jsii.Strings("arn:aws:ecr:" + region + ":" + account + ":repository/cdk-hnb659fds-container-assets-" + account + "-" + region)}),
 			awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Actions: jsii.Strings("ecr:GetAuthorizationToken"), Resources: jsii.Strings("*")}),
 			awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Actions: jsii.Strings("logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"), Resources: jsii.Strings("arn:aws:logs:"+region+":"+account+":log-group:/agent-pdf/mock/*", "arn:aws:logs:"+region+":"+account+":log-group:/aws/lambda/agent-pdf-mock-payment*")}),
@@ -117,7 +121,7 @@ func foundationStack(app awscdk.App, account, region string) awscdk.Stack {
 	executionStatements := executionServiceBoundaryStatements(account, region, hostedZoneID(), requiredFoundationResourceID("PDF_BOUNDARY_CLOUDFRONT_DISTRIBUTION_ID"), requiredFoundationResourceID("PDF_BOUNDARY_ORIGIN_REQUEST_POLICY_ID"), requiredFoundationARN("PDF_BOUNDARY_VIEWER_CERTIFICATE_ARN", "arn:aws:acm:us-east-1:"+account+":certificate/"), requiredFoundationARN("PDF_BOUNDARY_ORIGIN_CERTIFICATE_ARN", "arn:aws:acm:"+region+":"+account+":certificate/"), os.Getenv("PDF_BOUNDARY_API_CERTIFICATE_ARN"), staticOACARN)
 	executionStatements = append(executionStatements,
 		awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Actions: jsii.Strings("iam:GetRole*", "iam:List*RolePolic*", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:TagRole", "iam:UntagRole", "iam:UpdateAssumeRolePolicy", "iam:UpdateRole", "iam:DeleteRole"), Resources: jsii.Strings("arn:aws:iam::" + account + ":role/AgentPdfMock-*")}),
-		awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Actions: jsii.Strings("iam:CreateRole", "iam:PutRolePermissionsBoundary"), Resources: jsii.Strings("arn:aws:iam::" + account + ":role/AgentPdfMock-*"), Conditions: &map[string]interface{}{"StringEquals": map[string]any{"iam:PermissionsBoundary": runtimeBoundary.ManagedPolicyArn()}}}),
+		awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Actions: jsii.Strings("iam:CreateRole", "iam:PutRolePermissionsBoundary"), Resources: jsii.Strings("arn:aws:iam::" + account + ":role/AgentPdfMock-*"), Conditions: &map[string]interface{}{"StringEquals": map[string]any{"iam:PermissionsBoundary": namedPolicyArn(account, runtimeBoundaryName)}}}),
 		awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Actions: jsii.Strings("iam:AttachRolePolicy", "iam:DetachRolePolicy"), Resources: jsii.Strings("arn:aws:iam::" + account + ":role/AgentPdfMock-*"), Conditions: &map[string]interface{}{"ArnEquals": map[string]any{"iam:PolicyARN": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"}}}),
 		awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Actions: jsii.Strings("iam:PassRole"), Resources: jsii.Strings("arn:aws:iam::" + account + ":role/AgentPdfMock-*"), Conditions: &map[string]interface{}{"StringEquals": map[string]any{"iam:PassedToService": []string{"ecs-tasks.amazonaws.com", "lambda.amazonaws.com"}}}}),
 		awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Actions: jsii.Strings("iam:CreateServiceLinkedRole"), Resources: jsii.Strings("arn:aws:iam::" + account + ":role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService"), Conditions: &map[string]interface{}{"StringEquals": map[string]any{"iam:AWSServiceName": "ecs.application-autoscaling.amazonaws.com"}}}),
@@ -141,7 +145,9 @@ func foundationStack(app awscdk.App, account, region string) awscdk.Stack {
 	}})
 	networkStatements := networkDeploymentStatements(account, region)
 	networkPolicy := awsiam.NewManagedPolicy(stack, jsii.String("NetworkDeploymentPolicy"), &awsiam.ManagedPolicyProps{ManagedPolicyName: jsii.String("PDF_NETWORK_DEPLOY"), Statements: &networkStatements})
-	managed := []awsiam.IManagedPolicy{scalingPolicy, boundaryAttachmentPolicy, networkPolicy}
+	htmlStatements := htmlDeploymentStatements(account, region)
+	htmlPolicy := awsiam.NewManagedPolicy(stack, jsii.String("HtmlDeploymentPolicy"), &awsiam.ManagedPolicyProps{ManagedPolicyName: jsii.String("PDF_HTML_DEPLOY"), Statements: &htmlStatements})
+	managed := []awsiam.IManagedPolicy{scalingPolicy, boundaryAttachmentPolicy, networkPolicy, htmlPolicy}
 	for index, name := range []string{"PDF_CDK_DEPLOY", "PDF_CDK_DEPLOY_2", "PDF_EDGE_DEPLOY"} {
 		managed = append(managed, awsiam.ManagedPolicy_FromManagedPolicyArn(stack, jsii.String("ExistingPolicy"+string(rune('A'+index))), jsii.String(namedPolicyArn(account, name))))
 	}

@@ -98,3 +98,16 @@ func validate(data []byte, maxBytes int) error {
 	}
 	return nil
 }
+
+// MarshalResponse serializes an HTTP JSON body without expanding &, < and >
+// into HTML escapes. Never embed its output into HTML or JavaScript. Callers
+// must set application/json and nosniff; untrusted text is validated separately.
+func MarshalResponse(value any) ([]byte, error) {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(value); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(b.Bytes(), []byte{'\n'}), nil
+}

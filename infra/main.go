@@ -21,6 +21,11 @@ func main() {
 	app := awscdk.NewApp(nil)
 	account := os.Getenv("CDK_DEFAULT_ACCOUNT")
 	requireDeploymentAccount(account, os.Getenv("PDF_LOCALSTACK") == "1")
+	if os.Getenv("PDF_CLOUDFRONT_ACCESS_LOGS_ONLY") == "1" {
+		cloudFrontAccessLogsStack(app, account, os.Getenv("PDF_CLOUDFRONT_DISTRIBUTION_ID"))
+		app.Synth(nil)
+		return
+	}
 	region := os.Getenv("CDK_DEFAULT_REGION")
 	if region == "" {
 		region = "us-east-2"
@@ -64,8 +69,43 @@ func main() {
 		app.Synth(nil)
 		return
 	}
+	if os.Getenv("PDF_HTML_INTEGRATION_ONLY") == "1" {
+		if local {
+			panic("HTML integration requires real AWS")
+		}
+		htmlIntegrationStack(app, account, region)
+		app.Synth(nil)
+		return
+	}
+	if os.Getenv("PDF_MICROVM_PROBE_ONLY") == "1" {
+		if local {
+			panic("MicroVM compatibility requires real AWS")
+		}
+		microVMProbeStack(app, account, region)
+		app.Synth(nil)
+		return
+	}
+	if os.Getenv("PDF_BROWSER_PROBE_ONLY") == "1" {
+		if local {
+			panic("browser capability tests require real Lambda")
+		}
+		browserProbeStack(app, account, region)
+		app.Synth(nil)
+		return
+	}
 	edgeEnabled := os.Getenv("PDF_ENABLE_EDGE") == "1"
 	directAPI := directAPIEnabled()
+	if htmlEnabled() && !directAPI {
+		panic("HTML requires protected regional API ingress")
+	}
+	if htmlEnabled() && htmlJavaScript() && !local {
+		if err := requireHTMLNativeReview("../native/browser-advisories.json"); err != nil {
+			panic(err)
+		}
+		if err := requireHTMLRuntimeArtifact(); err != nil {
+			panic(err)
+		}
+	}
 	staticSite := staticSiteEnabled()
 	if directAPI && !edgeEnabled {
 		panic("regional API requires the protected website/origin configuration")
@@ -113,6 +153,9 @@ func main() {
 	payment := awslambda.NewFunction(stack, jsii.String("Payment"), &awslambda.FunctionProps{FunctionName: jsii.String("agent-pdf-mock-payment"), Runtime: awslambda.Runtime_PROVIDED_AL2023(), Architecture: awslambda.Architecture_ARM_64(), Handler: jsii.String("bootstrap"), Code: awslambda.Code_FromAsset(jsii.String("../build/payment"), nil), MemorySize: jsii.Number(256), Timeout: awscdk.Duration_Seconds(jsii.Number(20)), ReservedConcurrentExecutions: jsii.Number(paymentReservedConcurrency), LogGroup: paymentLogs, Environment: &map[string]*string{"PAYMENT_MODE": jsii.String(paymentCfg.Mode), "PAYMENT_PAY_TO": jsii.String(paymentCfg.PayTo), "PAYMENT_TABLE": table.TableName(), "RESOURCE_URL": resource}})
 	payment.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Actions: &[]*string{jsii.String("dynamodb:GetItem"), jsii.String("dynamodb:PutItem"), jsii.String("dynamodb:UpdateItem")}, Resources: &[]*string{table.TableArn()}}))
 	coinbaseParameters(stack, payment, os.Getenv("PDF_ENABLE_CDP_CHECK") == "1" || paymentCfg.Mode != "mock")
+	if htmlEnabled() {
+		payment.AddEnvironment(jsii.String("HTML_RESOURCE_URL"), jsii.String("https://"+regionalAPIHost+htmlAPIPath), nil)
+	}
 	alias := awslambda.NewAlias(stack, jsii.String("PaymentAlias"), &awslambda.AliasProps{AliasName: jsii.String("live"), Version: payment.CurrentVersion()})
 	cluster := awsecs.NewCluster(stack, jsii.String("Cluster"), &awsecs.ClusterProps{Vpc: vpc, ClusterName: jsii.String("agent-pdf-mock")})
 	task := awsecs.NewFargateTaskDefinition(stack, jsii.String("Task"), &awsecs.FargateTaskDefinitionProps{Family: jsii.String("agent-pdf-mock"), Cpu: jsii.Number(256), MemoryLimitMiB: jsii.Number(2048), RuntimePlatform: &awsecs.RuntimePlatform{CpuArchitecture: awsecs.CpuArchitecture_ARM64(), OperatingSystemFamily: awsecs.OperatingSystemFamily_LINUX()}})
@@ -141,7 +184,11 @@ func main() {
 	targets := listener.AddTargets(jsii.String("Api"), &awselasticloadbalancingv2.AddApplicationTargetsProps{TargetGroupName: jsii.String("agent-pdf-mock"), Priority: jsii.Number(10), Conditions: &conditions, Port: jsii.Number(8080), Protocol: awselasticloadbalancingv2.ApplicationProtocol_HTTP, Targets: &[]awselasticloadbalancingv2.IApplicationLoadBalancerTarget{service}, DeregistrationDelay: awscdk.Duration_Seconds(jsii.Number(120)), HealthCheck: &awselasticloadbalancingv2.HealthCheck{Path: jsii.String("/health"), Interval: awscdk.Duration_Seconds(jsii.Number(10)), Timeout: awscdk.Duration_Seconds(jsii.Number(5)), HealthyThresholdCount: jsii.Number(2)}})
 	balanceBusyParsers(targets)
 	if directAPI {
-		regionalAPI(stack, alb, targets, listener)
+		if htmlEnabled() {
+			regionalAPI(stack, alb, targets, listener, htmlFunctions(stack, alias, paymentCfg))
+		} else {
+			regionalAPI(stack, alb, targets, listener)
+		}
 	}
 	if autoscaling {
 		configureServiceAutoscaling(service, targets)
@@ -154,6 +201,10 @@ func main() {
 	awscdk.NewCfnOutput(stack, jsii.String("StaticSiteEnabled"), &awscdk.CfnOutputProps{Value: jsii.String(boolSetting(staticSite))})
 	awscdk.NewCfnOutput(stack, jsii.String("RegionalApiEnabled"), &awscdk.CfnOutputProps{Value: jsii.String(boolSetting(directAPI))})
 	awscdk.NewCfnOutput(stack, jsii.String("PublicAccessEnabled"), &awscdk.CfnOutputProps{Value: jsii.String(boolSetting(public))})
+	awscdk.NewCfnOutput(stack, jsii.String("HTMLEnabled"), &awscdk.CfnOutputProps{Value: jsii.String(boolSetting(htmlEnabled()))})
+	awscdk.NewCfnOutput(stack, jsii.String("HTMLJavaScriptEnabled"), &awscdk.CfnOutputProps{Value: jsii.String(boolSetting(htmlJavaScript()))})
+	awscdk.NewCfnOutput(stack, jsii.String("HTMLPublicAccessEnabled"), &awscdk.CfnOutputProps{Value: jsii.String(boolSetting(htmlPublicAccess()))})
+	awscdk.NewCfnOutput(stack, jsii.String("HTMLThreatBucketImported"), &awscdk.CfnOutputProps{Value: jsii.String(boolSetting(htmlEnabled() && os.Getenv("PDF_HTML_REUSE_THREATS") == "1"))})
 	awscdk.NewCfnOutput(stack, jsii.String("OperationalMonitoringEnabled"), &awscdk.CfnOutputProps{Value: jsii.String(monitoringSetting(os.Getenv("PDF_ENABLE_OPERATIONAL_ALARMS")))})
 	awscdk.NewCfnOutput(stack, jsii.String("AutoscalingEnabled"), &awscdk.CfnOutputProps{Value: jsii.String(boolSetting(autoscaling))})
 	awscdk.NewCfnOutput(stack, jsii.String("AutoscalingConfigured"), &awscdk.CfnOutputProps{Value: jsii.String(boolSetting(autoscalingConfigured))})

@@ -122,7 +122,7 @@ func TestLeanSummaryHasOnlyApprovedFieldsAndSanitizesCategories(t *testing.T) {
 		t.Fatal(buf.String())
 	}
 	allowed := map[string]bool{}
-	for _, key := range strings.Fields("time level msg telemetry role schema route method request_id status code stage elapsed_ms verify_ms upload_ms check_ms parse_ms prepare_ms settle_ms pdfium poppler requests tool_requests completed document_failures service_failures paid_service_failures capacity_refusals fallback_attempts write_failed") {
+	for _, key := range strings.Fields("time level msg telemetry role schema route method request_id status outcome code stage panic_recovered elapsed_ms verify_ms upload_ms check_ms parse_ms prepare_ms settle_ms pdfium poppler requests tool_requests quotes_issued payment_rejections completed document_failures service_failures paid_service_failures capacity_refusals fallback_attempts write_failed") {
 		allowed[key] = true
 	}
 	for key := range record {
@@ -193,13 +193,40 @@ func TestOnlyPostedToolsCountAsCompletions(t *testing.T) {
 		route, method string
 		want          float64
 	}{
-		{"/health", "GET", 0}, {"/docs", "GET", 0}, {"/v1/pdf/text", "GET", 0}, {"/v1/pdf/text", "HEAD", 0}, {"/v1/pdf/text", "POST", 1},
+		{"/health", "GET", 0}, {"/docs", "GET", 0}, {"/v1/pdf/text", "GET", 0}, {"/v1/pdf/text", "HEAD", 0}, {"/v1/pdf/text", "POST", 1}, {"/v1/html/markdown", "POST", 1}, {"/v1/html/markdown", "GET", 0},
 	} {
 		logs.Reset()
 		RequestDetailSummary(context.Background(), 200, false, false, false, time.Now(), Request{Route: tc.route, Method: tc.method})
 		var record map[string]any
 		if json.Unmarshal(logs.Bytes(), &record) != nil || record["completed"] != tc.want || record["tool_requests"] != tc.want {
 			t.Fatal("incorrect tool count", tc, record)
+		}
+	}
+}
+
+func TestOutcomeLabelsDistinguishQuotesInvalidHeadersAndCompletions(t *testing.T) {
+	for _, route := range []string{"/v1/pdf/text", "/v1/html/markdown"} {
+		for _, tc := range []struct {
+			status            int
+			stage, code, want string
+			quote, rejected   float64
+		}{
+			{402, "headers", "", "quote_issued", 1, 0},
+			{400, "headers", "invalid_payment_header", "payment_rejected", 0, 1},
+			{402, "verify", "invalid_payment", "payment_rejected", 0, 1},
+			{200, "write", "", "completed", 0, 0},
+			{422, "parse", "document_parse_failed", "document_failure", 0, 0},
+			{429, "headers", "capacity_exceeded", "capacity_refusal", 0, 0},
+		} {
+			var logs bytes.Buffer
+			old := slog.Default()
+			slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+			RequestDetailSummary(context.Background(), tc.status, false, false, false, time.Now(), Request{Route: route, Method: "POST", Stage: tc.stage, Code: tc.code})
+			slog.SetDefault(old)
+			var v map[string]any
+			if json.Unmarshal(logs.Bytes(), &v) != nil || v["outcome"] != tc.want || v["quotes_issued"] != tc.quote || v["payment_rejections"] != tc.rejected {
+				t.Fatal("incorrect outcome", route, tc, v)
+			}
 		}
 	}
 }

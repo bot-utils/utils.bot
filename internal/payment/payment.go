@@ -265,7 +265,7 @@ func (s Service) Handle(ctx context.Context, r protocol.PaymentRequest) (out pro
 	}
 	if r.CheckDocument || r.DocumentFailed {
 		documents, ok := s.Store.(DocumentStore)
-		if !ok {
+		if !ok && !cfg.IsHTML() {
 			return fail(502, "document_cache_unavailable")
 		}
 		if r.DocumentFailed {
@@ -293,8 +293,10 @@ func (s Service) Handle(ctx context.Context, r protocol.PaymentRequest) (out pro
 			// detached from caller cancellation but remains tightly bounded.
 			writeCtx, writeCancel := context.WithTimeout(context.WithoutCancel(ctx), documentFailureWriteTimeout)
 			defer writeCancel()
-			if err := documents.MarkFailed(writeCtx, r.BodySHA256, failureTime); err != nil {
-				return fail(502, "document_cache_unavailable")
+			if !cfg.IsHTML() {
+				if err := documents.MarkFailed(writeCtx, r.BodySHA256, failureTime); err != nil {
+					return fail(502, "document_cache_unavailable")
+				}
 			}
 			// The server gives failure bookkeeping a fresh five-second deadline.
 			// Use its derived callback time for a stable fixed-window key, so the
@@ -309,7 +311,11 @@ func (s Service) Handle(ctx context.Context, r protocol.PaymentRequest) (out pro
 			}
 			return protocol.PaymentResponse{Pass: true}
 		}
-		failed, err := documents.Failed(ctx, r.BodySHA256, now.Unix())
+		failed := false
+		var err error
+		if !cfg.IsHTML() {
+			failed, err = documents.Failed(ctx, r.BodySHA256, now.Unix())
+		}
 		if err != nil {
 			return fail(502, "document_cache_unavailable")
 		}

@@ -25,9 +25,11 @@ const (
 // Config is immutable after construction. Its zero value is the existing mock
 // configuration, keeping local fixtures separate from explicitly enabled CDP.
 type Config struct {
-	mode, payTo string
-	public      bool
-	large       bool
+	mode, payTo    string
+	public         bool
+	large          bool
+	html           bool
+	htmlJavaScript bool
 }
 
 func NewConfig(mode, payTo string) (Config, error) {
@@ -104,9 +106,17 @@ func (c Config) TokenName() string {
 // ForSize selects the exact price from uploaded bytes. Before upload, a length
 // is only a quote hint; unknown lengths initially receive the smaller quote.
 func (c Config) ForSize(size int64) Config {
-	c.large = size > SmallPDFLimit
+	c.large = !c.html && size > SmallPDFLimit
 	return c
 }
+
+// ForHTML selects the separate fixed-price URL-to-Markdown operation.
+func (c Config) ForHTML() Config { c.html, c.large = true, false; return c }
+func (c Config) IsHTML() bool    { return c.html }
+
+// WithHTMLJavaScript selects the experimental renderer contract; it does not change pricing.
+func (c Config) WithHTMLJavaScript(enabled bool) Config { c.htmlJavaScript = enabled; return c }
+func (c Config) HTMLJavaScript() bool                   { return c.htmlJavaScript }
 
 func (c Config) Requirements() types.PaymentRequirements {
 	amount := SmallAmount
@@ -117,6 +127,19 @@ func (c Config) Requirements() types.PaymentRequirements {
 		Extra: map[string]interface{}{"name": c.TokenName(), "version": "2", "assetTransferMethod": "eip3009", "paymentFlow": "authorization"}}
 }
 func (c Config) Description() string {
+	if c.html {
+		prefix := ""
+		if c.Mode() == ModeMock {
+			prefix = "MOCK PAYMENTS ONLY. "
+		} else if c.Mode() == ModeSepolia {
+			prefix = "TESTNET PAYMENTS ONLY. "
+		}
+		render := "HTTPS HTML fetch only; no JavaScript."
+		if c.htmlJavaScript {
+			render = "HTTPS page with bounded JavaScript rendering; no login or interaction."
+		}
+		return prefix + "URL to Markdown. " + render + " 0.01 USDC; collect only after conversion succeeds."
+	}
 	switch c.Mode() {
 	case ModeBase:
 		return "PDF text extraction. Standard x402 v2 authorization; charge only after successful parsing: " + PricingDescription + " on Base. Parsing failures are not charged."
@@ -128,6 +151,9 @@ func (c Config) Description() string {
 }
 func (c Config) Quote(resource string) types.PaymentRequired {
 	terms := WebsiteBase(resource) + "/terms#terms-of-use"
+	if c.html {
+		return types.PaymentRequired{X402Version: 2, Resource: &types.ResourceInfo{URL: resource, MimeType: "application/json", Description: c.Description() + " Blocks HaGeZi threat-only and CERT Polska warning-list domains, including redirects. 4 MiB HTML, up to 4 MiB uncompressed result JSON shared by Markdown and metadata. Accept-Encoding: gzip enables larger results; responses that cannot fit transport are rejected without collection; successful partial, blank, login and HTML error pages cost the full fee. Same URL may change between retries. Five failures per wallet per hour; at most three additional paid retries within five minutes. No document or response retention. " + SourceRiskNotice + "Submitting an authorized request indicates agreement to Terms " + TermsVersion + ": " + terms}, Accepts: []types.PaymentRequirements{c.Requirements()}}
+	}
 	return types.PaymentRequired{X402Version: 2, Resource: &types.ResourceInfo{URL: resource, MimeType: "application/json", Description: c.Description() + " Limits: 100 MiB upload, up to 100 returned pages and 1 MiB text. The full quoted fee applies to successful partial or blank results. Five failed/unpaid attempts or abandoned verified requests per wallet per fixed one-hour window pause new requests; paid retries also pause after five abandonments of that payment. Honor Retry-After on 429. " + SourceRiskNotice + "Submitting a PDF with payment authorization indicates agreement to Terms " + TermsVersion + ": " + terms}, Accepts: []types.PaymentRequirements{c.Requirements()}}
 }
 func (c Config) ValidSettlement(s *x402.SettleResponse) bool {
