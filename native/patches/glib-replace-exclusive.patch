@@ -1,0 +1,17 @@
+SPDX-License-Identifier: LGPL-2.1-or-later
+CVE-2026-86469: fail closed if another file appears after unlink.
+
+--- a/gio/glocalfileoutputstream.c
++++ b/gio/glocalfileoutputstream.c
+@@ -1208,9 +1208,9 @@
+ 	}
+ 
+       if (readable)
+-	open_flags = O_RDWR | O_CREAT | O_BINARY | O_CLOEXEC;
++	open_flags = O_RDWR | O_CREAT | O_BINARY | O_CLOEXEC | O_EXCL | O_NOFOLLOW;
+       else
+-	open_flags = O_WRONLY | O_CREAT | O_BINARY | O_CLOEXEC;
++	open_flags = O_WRONLY | O_CREAT | O_BINARY | O_CLOEXEC | O_EXCL | O_NOFOLLOW;
+       fd = g_open (filename, open_flags, mode);
+       if (fd == -1)
+ 	{

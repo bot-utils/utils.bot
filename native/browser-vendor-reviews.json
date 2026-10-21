@@ -1,0 +1,52 @@
+{
+  "reviews": [
+    {
+      "package": "libc6",
+      "version": "2.43-7",
+      "reviewedOn": "2026-10-20",
+      "reviewUntil": "2026-11-19",
+      "decision": "vendor_disputed",
+      "limitations": "This is not a patch or a claim of invulnerable mitigations. A separate memory-corruption defect could still enable exploitation; sandboxing and disposable workers remain required.",
+      "cve": "CVE-2019-1010022",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2019-1010022",
+      "evidenceSHA256": "cbef0ea746e9555c4d04761bf8ef09f236c787e9fc9033113695d351d480ab1d",
+      "analysis": "Debian records the upstream decision that the thread-stack guard report is not a security issue. The report assumes a separate stack buffer overflow. The application exposes no custom stack-guard facility and runs a fresh sandboxed browser in a disposable worker, rather than treating a canary as the isolation boundary."
+    },
+    {
+      "package": "libc6",
+      "version": "2.43-7",
+      "reviewedOn": "2026-10-20",
+      "reviewUntil": "2026-11-19",
+      "decision": "vendor_disputed",
+      "limitations": "This is not a patch or a claim of invulnerable mitigations. A separate memory-corruption defect could still enable exploitation; sandboxing and disposable workers remain required.",
+      "cve": "CVE-2019-1010024",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2019-1010024",
+      "evidenceSHA256": "c59a28082119a9ded2f8562007694cd70e5357e727064de5eea447e49a75b4c0",
+      "analysis": "Debian records the upstream decision that thread stack/heap address reuse is not a security issue. The application does not promise fresh ASLR within one process. Browser profiles, processes and the worker are discarded between jobs; no customer snapshot is reused."
+    },
+    {
+      "package": "libc6",
+      "version": "2.43-7",
+      "reviewedOn": "2026-10-20",
+      "reviewUntil": "2026-11-19",
+      "decision": "vendor_disputed",
+      "limitations": "This is not a patch or a claim of invulnerable mitigations. A separate memory-corruption defect could still enable exploitation; sandboxing and disposable workers remain required.",
+      "cve": "CVE-2019-1010025",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2019-1010025",
+      "evidenceSHA256": "48754f59ff21707ba10211ef7ade27c43c12dd422dbb1acab80155c321ae00a7",
+      "analysis": "Debian records the upstream decision that the described ASLR bypass is not a security issue. Knowing a thread heap address does not by itself grant an out-of-bounds read/write. This review accepts that vendor classification, not an assertion that ASLR is perfect."
+    },
+    {
+      "package": "libsqlite3-0",
+      "version": "3.53.4-2",
+      "cve": "CVE-2021-45346",
+      "reviewedOn": "2026-10-20",
+      "reviewUntil": "2026-11-19",
+      "decision": "vendor_disputed",
+      "source": "https://www.sqlite.org/cves.html",
+      "evidenceSHA256": "0ef51a811fdc3dcfcd86692736190db83ef78073892fbe2d89029cbc57ade3a5",
+      "analysis": "SQLite explicitly classifies this exact CVE as misinformation, rather than a defect in its library. This is specific to CVE-2021-45346; arbitrary other SQLite findings remain blocking. The runtime still uses the pinned updated library and does not accept database files or SQL through its API.",
+      "limitations": "Vendor classification is not a security patch or a claim that browser-internal SQLite has no other vulnerabilities."
+    }
+  ]
+}

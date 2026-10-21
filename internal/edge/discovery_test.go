@@ -41,7 +41,7 @@ for(const uri of ['/__proto__','constructor','/v1/pdf/text']){
 }
 console.log(JSON.stringify(results));
 `
-		raw, err := exec.Command("node", "-e", code+script).CombinedOutput()
+		raw, err := exec.Command("node", "-e", edgeLogCapture+code+script).CombinedOutput()
 		if err != nil {
 			t.Fatalf("%v: %s", err, raw)
 		}
@@ -69,7 +69,7 @@ func TestPublicStaticPoliciesAndUnpaidQuoteKeepAdmissionRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, route := range []string{"/info", "/terms", "/readme"} {
+	for _, route := range []string{"/info", "/terms"} {
 		var code string
 		if route == "/readme" {
 			code, err = CodeWithConfig("https://utils.bot/v1/pdf/text", "203.0.113.10", cfg)
@@ -79,7 +79,7 @@ func TestPublicStaticPoliciesAndUnpaidQuoteKeepAdmissionRules(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		raw, err := exec.Command("node", "-e", code+`const uri=`+mustJSON(route)+`;const r=handler({viewer:{ip:'198.51.100.8'},request:{method:'GET',uri,headers:{},querystring:{}}});if(r.statusCode!==200||r.headers['x-robots-tag'].value!=='index, follow')throw Error('public static document unavailable');const bad=handler({viewer:{ip:'198.51.100.8'},request:{method:'PUT',uri,headers:{},querystring:{}}});if(bad.statusCode!==405)throw Error('method admission lost');`).CombinedOutput()
+		raw, err := exec.Command("node", "-e", edgeLogCapture+code+`const uri=`+mustJSON(route)+`;const r=handler({viewer:{ip:'198.51.100.8'},request:{method:'GET',uri,headers:{},querystring:{}}});if(r.statusCode!==200||r.headers['x-robots-tag'].value!=='index, follow')throw Error('public static document unavailable');const bad=handler({viewer:{ip:'198.51.100.8'},request:{method:'PUT',uri,headers:{},querystring:{}}});if(bad.statusCode!==405)throw Error('method admission lost');`).CombinedOutput()
 		if err != nil {
 			t.Fatalf("%v %s", err, raw)
 		}
@@ -88,7 +88,7 @@ func TestPublicStaticPoliciesAndUnpaidQuoteKeepAdmissionRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := exec.Command("node", "-e", code+`const r=handler({viewer:{ip:'198.51.100.8'},request:{method:'POST',uri:'/v1/pdf/text',headers:{},querystring:{}}});if(r.statusCode!==402||r.headers['x-payment-mode'].value!=='cdp-base')throw Error('public quote bypass or mode mismatch');`).CombinedOutput()
+	raw, err := exec.Command("node", "-e", edgeLogCapture+code+`const r=handler({viewer:{ip:'198.51.100.8'},request:{method:'POST',uri:'/v1/pdf/text',headers:{},querystring:{}}});if(r.statusCode!==402||r.headers['x-payment-mode'].value!=='cdp-base')throw Error('public quote bypass or mode mismatch');`).CombinedOutput()
 	if err != nil {
 		t.Fatalf("%v %s", err, raw)
 	}

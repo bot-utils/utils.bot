@@ -36,7 +36,7 @@ const request={method:'GET',uri:'/docs',headers:{'x-agent-pdf-origin':{value:'fo
 const result=handler({viewer:{ip:'203.0.113.10'},request});
 if(result!==request || result.headers['x-agent-pdf-origin'])throw Error('website routing or origin protection changed');
 `
-	if raw, err := exec.Command("node", "-e", code+check).CombinedOutput(); err != nil {
+	if raw, err := exec.Command("node", "-e", edgeLogCapture+code+check).CombinedOutput(); err != nil {
 		t.Fatalf("%v: %s", err, raw)
 	}
 	for _, url := range []string{protocol.APIOrigin + ":443/v1/pdf/text", protocol.APIOrigin + "/v1/pdf/text?", protocol.APIOrigin + "/v1/pdf/text#fragment", "https://api.utils.bot.evil/v1/pdf/text"} {

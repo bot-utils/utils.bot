@@ -1,4 +1,6 @@
 function reply(status, code, extra) {
+    var outcome = code === 'invalid_payment_header' || code === 'ambiguous_content_headers' ? 'payment_rejected' : 'response';
+    console.log('telemetry=summary role=edge outcome=' + outcome + ' status=' + status + ' code=' + code);
     var headers = {
         'content-type': { value: 'application/json' },
         'cache-control': { value: 'no-store' },
@@ -34,20 +36,12 @@ function handler(event) {
     }
     // The origin authentication token is supplied by CloudFront, never viewers.
     delete headers['x-agent-pdf-origin'];
-    if (uri === '/readme') {
-        return {
-            statusCode: 200,
-            headers: {
-                'content-type': { value: 'text/markdown; charset=utf-8' },
-                'cache-control': { value: 'public, max-age=300' },
-                'x-robots-tag': { value: config.public ? 'index, follow' : 'noindex, nofollow' },
-                'x-content-type-options': { value: 'nosniff' },
-                'referrer-policy': { value: 'no-referrer' },
-                'content-security-policy': { value: "default-src 'none'; frame-ancestors 'none'" },
-                link: { value: '</openapi>; rel="service-desc"; type="application/yaml"' }
-            },
-            body: request.method === 'HEAD' ? '' : config.readmeMarkdown
-        };
+    // Documents are static origin objects, not embedded into the 10 KiB
+    // viewer function. Their size must not grow this function's code.
+    if (!api) {
+        delete headers['payment-signature'];
+        delete headers.authorization;
+        delete headers.cookie;
     }
     if (!api || request.method !== 'POST') { return request; }
     var payment = headers['payment-signature'];
@@ -59,6 +53,7 @@ function handler(event) {
             parsed.accepts[0].amount = config.largeAmount;
             quote = JSON.stringify(parsed);
         }
+        console.log('telemetry=summary role=edge outcome=quote_issued status=402 code=none');
         return {
             statusCode: 402,
             headers: {

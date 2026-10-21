@@ -16,16 +16,30 @@ import (
 )
 
 func main() {
+	wallet := flag.Uint64("wallet", 1, "public mock wallet index; all fixture keys must NEVER be funded")
 	resource := flag.String("url", "http://localhost:8080/v1/pdf/text", "canonical resource URL")
+	tool := flag.String("tool", "pdf", "mock tool: pdf or html")
 	size := flag.Int64("bytes", 0, "PDF byte count for selecting the mock price tier")
 	flag.Parse()
+	if *wallet == 0 || *wallet > 0xffffffff {
+		fmt.Fprintln(os.Stderr, "fixture wallet index out of range")
+		os.Exit(1)
+	}
 	if *size < 0 || *size > protocol.MaxPDF {
 		fmt.Fprintln(os.Stderr, "fixture size must be between zero and 100 MiB")
 		os.Exit(1)
 	}
 	cfg := (protocol.Config{}).ForSize(*size)
+	switch *tool {
+	case "pdf":
+	case "html":
+		cfg = cfg.ForHTML()
+	default:
+		fmt.Fprintln(os.Stderr, "unsupported fixture tool")
+		os.Exit(1)
+	}
 	// Intentionally public, test-only key. No RPC is used by this tool.
-	s, err := signer.NewClientSignerFromPrivateKey("0000000000000000000000000000000000000000000000000000000000000001")
+	s, err := signer.NewClientSignerFromPrivateKey(fmt.Sprintf("%064x", *wallet))
 	if err != nil {
 		panic(err)
 	}

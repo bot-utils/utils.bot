@@ -17,6 +17,10 @@ license files; the list below is not a complete license inventory.
 - The x402 SDK and its transitive dependencies include go-ethereum. Review
   their licenses and any applicable static-binary redistribution and relinking
   obligations for the exact selected components.
+- The MicroVM controller adds the pinned AWS SDK `lambdamicrovms` service
+  module; it reuses the existing SDK core, signing and transport packages. No
+  browser automation framework, JavaScript runtime package or new general
+  purpose HTTP/JSON dependency is introduced.
 - The AWS SDK, CDK and Swagger UI include components distributed under Apache
   2.0; preserve the required license and notice materials.
 - Native runtime inputs also include Expat, FreeType, zlib, Fontconfig,

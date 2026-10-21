@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os/exec"
 	"regexp"
-	"strings"
 	"testing"
 
 	"pdfservice/internal/protocol"
@@ -77,7 +76,7 @@ if(handler({viewer:{ip:'198.51.100.2'},request:{method:'POST',uri:'/v1/pdf/text'
 if(handler({viewer:{ip:'203.0.113.10'},request:{method:'GET',uri:'/',headers:{},querystring:{bad:{value:'1'}}}}).statusCode!==400)throw Error('query accepted');
 console.log(JSON.stringify(quote));
 `
-	cmd := exec.Command("node", "-e", code+check)
+	cmd := exec.Command("node", "-e", edgeLogCapture+code+check)
 	raw, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("edge execution: %v: %s", err, raw)
@@ -99,9 +98,6 @@ console.log(JSON.stringify(quote));
 	if string(header) != string(want) || response.Body != string(want) {
 		t.Fatal("edge x402 quote diverged from backend")
 	}
-	if strings.Contains(code, "console.") {
-		t.Fatal("edge logs may disclose request/payment headers")
-	}
 }
 
 func TestRealQuoteUsesSameBaseRequirements(t *testing.T) {
@@ -116,7 +112,7 @@ func TestRealQuoteUsesSameBaseRequirements(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := exec.Command("node", "-e", code+`const r=handler({viewer:{ip:'203.0.113.10'},request:{method:'POST',uri:'/v1/pdf/text',headers:{}}}); if(r.statusCode!==402||r.headers['x-payment-mode'].value!=='cdp-base')throw Error('wrong payment mode');console.log(r.body);`).CombinedOutput()
+	raw, err := exec.Command("node", "-e", edgeLogCapture+code+`const r=handler({viewer:{ip:'203.0.113.10'},request:{method:'POST',uri:'/v1/pdf/text',headers:{}}}); if(r.statusCode!==402||r.headers['x-payment-mode'].value!=='cdp-base')throw Error('wrong payment mode');console.log(r.body);`).CombinedOutput()
 	if err != nil {
 		t.Fatalf("edge: %v %s", err, raw)
 	}

@@ -1,6 +1,8 @@
 package jsonwire
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -28,5 +30,20 @@ func TestRejectAmbiguousAndUnboundedControlJSON(t *testing.T) {
 	}
 	if Decode([]byte(`{"pass":true}`), &out, 100) != nil || !out.Pass {
 		t.Fatal("valid response rejected")
+	}
+}
+
+func TestHTTPResponseMarshalPreservesTextAndJSONEscaping(t *testing.T) {
+	value := map[string]string{"text": "&lt;example&gt; \" \\ \n\t 日本語 😀"}
+	wire, err := MarshalResponse(value)
+	var got map[string]string
+	if err != nil || json.Unmarshal(wire, &got) != nil || got["text"] != value["text"] || bytes.Contains(wire, []byte(`\u0026`)) || bytes.HasSuffix(wire, []byte{'\n'}) {
+		t.Fatal("HTTP JSON serialization changed text", err)
+	}
+	if Check(wire, 4096) != nil {
+		t.Fatal("invalid output JSON")
+	}
+	if _, err := MarshalResponse(make(chan int)); err == nil {
+		t.Fatal("unsupported value accepted")
 	}
 }

@@ -1,0 +1,682 @@
+{
+  "findings": [
+    {
+      "package": "libasound2t64",
+      "cve": "CVE-2026-90781",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-90781",
+      "status": "fixed",
+      "version": "1.2.17~pre1+gitf44e0ab+utils1"
+    },
+    {
+      "package": "libasound2t64",
+      "cve": "CVE-2026-96674",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-96674",
+      "status": "fixed",
+      "version": "1.2.17~pre1+gitf44e0ab+utils1"
+    },
+    {
+      "package": "libasound2t64",
+      "cve": "CVE-2026-96675",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-96675",
+      "status": "fixed",
+      "version": "1.2.17~pre1+gitf44e0ab+utils1"
+    },
+    {
+      "package": "libasound2t64",
+      "cve": "CVE-2026-56109",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-56109",
+      "status": "fixed",
+      "version": "1.2.17~pre1+gitf44e0ab+utils1"
+    },
+    {
+      "package": "libatomic1",
+      "cve": "CVE-2026-102010",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-102010",
+      "status": "component_absent",
+      "forbidden": [
+        "libstdc++.so",
+        "pb_ds"
+      ],
+      "version": "14.2.0-19"
+    },
+    {
+      "package": "libatomic1",
+      "cve": "CVE-2026-95619",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-95619",
+      "status": "component_absent",
+      "forbidden": [
+        "libstdc++.so",
+        "pb_ds"
+      ],
+      "version": "14.2.0-19"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2026-18374",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-18374",
+      "status": "fixed",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2026-19499",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-19499",
+      "status": "fixed",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2026-19542",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-19542",
+      "status": "fixed",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2026-5435",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-5435",
+      "status": "fixed",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2026-6238",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-6238",
+      "status": "fixed",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2026-6368",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-6368",
+      "status": "fixed",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2026-6791",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-6791",
+      "status": "fixed",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2026-77117",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-77117",
+      "status": "fixed",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2026-80489",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-80489",
+      "status": "fixed",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2026-8674",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-8674",
+      "status": "fixed",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2026-86805",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-86805",
+      "status": "fixed",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2026-89092",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-89092",
+      "status": "fixed",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2026-95818",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-95818",
+      "status": "fixed",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2010-4756",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2010-4756",
+      "status": "risk_accepted",
+      "reason": "Owner-authorized residual risk, not fixed or proven unreachable. Exact package/browser/control versions and 30-day expiry enforced by browser-risk-acceptances.json.",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2018-20796",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2018-20796",
+      "status": "risk_accepted",
+      "reason": "Owner-authorized residual risk, not fixed or proven unreachable. Exact package/browser/control versions and 30-day expiry enforced by browser-risk-acceptances.json.",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2019-1010022",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2019-1010022",
+      "status": "vendor_disputed",
+      "reason": "Explicit dated upstream-classification review in browser-vendor-reviews.json; not a fixed vulnerability.",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2019-1010023",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2019-1010023",
+      "status": "component_absent",
+      "forbidden": [
+        "ldd"
+      ],
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2019-1010024",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2019-1010024",
+      "status": "vendor_disputed",
+      "reason": "Explicit dated upstream-classification review in browser-vendor-reviews.json; not a fixed vulnerability.",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2019-1010025",
+      "source": "https://bugzilla.redhat.com/show_bug.cgi?id=1737445",
+      "status": "vendor_disputed",
+      "reason": "Explicit dated upstream-classification review in browser-vendor-reviews.json; not a fixed vulnerability.",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2019-9192",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2019-9192",
+      "status": "risk_accepted",
+      "reason": "Owner-authorized residual risk, not fixed or proven unreachable. Exact package/browser/control versions and 30-day expiry enforced by browser-risk-acceptances.json.",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libc6",
+      "cve": "CVE-2026-97399",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-97399",
+      "status": "fixed",
+      "version": "2.43-7"
+    },
+    {
+      "package": "libexpat1",
+      "cve": "CVE-2025-66382",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2025-66382",
+      "status": "risk_accepted",
+      "reason": "Owner-authorized residual risk, not fixed or proven unreachable. Exact package/browser/control versions and 30-day expiry enforced by browser-risk-acceptances.json.",
+      "version": "2.9.0-1~deb13u1"
+    },
+    {
+      "package": "libgbm1",
+      "cve": "CVE-2023-45913",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2023-45913",
+      "status": "component_absent",
+      "forbidden": [
+        "libGLX",
+        "libGL.so",
+        "libGLX_mesa"
+      ],
+      "version": "25.0.7-2+deb13u1"
+    },
+    {
+      "package": "libgbm1",
+      "cve": "CVE-2023-45919",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2023-45919",
+      "status": "component_absent",
+      "forbidden": [
+        "libGLX",
+        "libGL.so",
+        "libGLX_mesa"
+      ],
+      "version": "25.0.7-2+deb13u1"
+    },
+    {
+      "package": "libgbm1",
+      "cve": "CVE-2023-45922",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2023-45922",
+      "status": "component_absent",
+      "forbidden": [
+        "libGLX",
+        "libGL.so",
+        "libGLX_mesa"
+      ],
+      "version": "25.0.7-2+deb13u1"
+    },
+    {
+      "package": "libgbm1",
+      "cve": "CVE-2023-45931",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2023-45931",
+      "status": "component_absent",
+      "forbidden": [
+        "libGLX",
+        "libGL.so",
+        "libGLX_mesa"
+      ],
+      "version": "25.0.7-2+deb13u1"
+    },
+    {
+      "package": "libgcc-s1",
+      "cve": "CVE-2026-102010",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-102010",
+      "status": "component_absent",
+      "forbidden": [
+        "libstdc++.so",
+        "pb_ds"
+      ],
+      "version": "14.2.0-19"
+    },
+    {
+      "package": "libgcc-s1",
+      "cve": "CVE-2026-95619",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-95619",
+      "status": "component_absent",
+      "forbidden": [
+        "libstdc++.so",
+        "pb_ds"
+      ],
+      "version": "14.2.0-19"
+    },
+    {
+      "package": "libglib2.0-0t64",
+      "cve": "CVE-2026-86469",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-86469",
+      "status": "fixed",
+      "version": "2.84.4-3~deb13u5+utils1"
+    },
+    {
+      "package": "libglib2.0-0t64",
+      "cve": "CVE-2012-0039",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2012-0039",
+      "status": "risk_accepted",
+      "reason": "Owner-authorized residual risk, not fixed or proven unreachable. Exact package/browser/control versions and 30-day expiry enforced by browser-risk-acceptances.json.",
+      "version": "2.84.4-3~deb13u5+utils1"
+    },
+    {
+      "package": "libnss3",
+      "cve": "CVE-2017-11695",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2017-11695",
+      "status": "component_absent",
+      "forbidden": [
+        "libnssdbm3"
+      ],
+      "version": "2:3.110-1+deb13u4"
+    },
+    {
+      "package": "libnss3",
+      "cve": "CVE-2017-11696",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2017-11696",
+      "status": "component_absent",
+      "forbidden": [
+        "libnssdbm3"
+      ],
+      "version": "2:3.110-1+deb13u4"
+    },
+    {
+      "package": "libnss3",
+      "cve": "CVE-2017-11697",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2017-11697",
+      "status": "component_absent",
+      "forbidden": [
+        "libnssdbm3"
+      ],
+      "version": "2:3.110-1+deb13u4"
+    },
+    {
+      "package": "libnss3",
+      "cve": "CVE-2017-11698",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2017-11698",
+      "status": "component_absent",
+      "forbidden": [
+        "libnssdbm3"
+      ],
+      "version": "2:3.110-1+deb13u4"
+    },
+    {
+      "package": "libsqlite3-0",
+      "cve": "CVE-2026-50812",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-50812",
+      "status": "fixed",
+      "version": "3.53.4-2"
+    },
+    {
+      "package": "libsqlite3-0",
+      "cve": "CVE-2026-50813",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-50813",
+      "status": "fixed",
+      "version": "3.53.4-2"
+    },
+    {
+      "package": "libsqlite3-0",
+      "cve": "CVE-2021-45346",
+      "source": "https://www3.sqlite.org/cves.html",
+      "status": "vendor_disputed",
+      "reason": "Explicit dated upstream-classification review in browser-vendor-reviews.json; not a fixed vulnerability.",
+      "version": "3.53.4-2"
+    },
+    {
+      "package": "libsqlite3-0",
+      "cve": "CVE-2025-70873",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2025-70873",
+      "status": "component_absent",
+      "forbidden": [
+        "zipfile.so"
+      ],
+      "version": "3.53.4-2"
+    },
+    {
+      "package": "libsystemd0",
+      "cve": "CVE-2026-16742",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-16742",
+      "status": "fixed",
+      "version": "262.1-1"
+    },
+    {
+      "package": "libsystemd0",
+      "cve": "CVE-2026-15059",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-15059",
+      "status": "fixed",
+      "version": "262.1-1"
+    },
+    {
+      "package": "libsystemd0",
+      "cve": "CVE-2013-4392",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2013-4392",
+      "status": "component_absent",
+      "forbidden": [
+        "systemd-homed",
+        "systemd-oomd",
+        "systemd-journald",
+        "journalctl",
+        "systemd-tmpfiles",
+        "systemd-machined",
+        "udevd",
+        "logger"
+      ],
+      "version": "262.1-1"
+    },
+    {
+      "package": "libsystemd0",
+      "cve": "CVE-2023-31437",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2023-31437",
+      "status": "component_absent",
+      "forbidden": [
+        "systemd-homed",
+        "systemd-oomd",
+        "systemd-journald",
+        "journalctl",
+        "systemd-tmpfiles",
+        "systemd-machined",
+        "udevd",
+        "logger"
+      ],
+      "version": "262.1-1"
+    },
+    {
+      "package": "libsystemd0",
+      "cve": "CVE-2023-31438",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2023-31438",
+      "status": "component_absent",
+      "forbidden": [
+        "systemd-homed",
+        "systemd-oomd",
+        "systemd-journald",
+        "journalctl",
+        "systemd-tmpfiles",
+        "systemd-machined",
+        "udevd",
+        "logger"
+      ],
+      "version": "262.1-1"
+    },
+    {
+      "package": "libsystemd0",
+      "cve": "CVE-2023-31439",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2023-31439",
+      "status": "component_absent",
+      "forbidden": [
+        "systemd-homed",
+        "systemd-oomd",
+        "systemd-journald",
+        "journalctl",
+        "systemd-tmpfiles",
+        "systemd-machined",
+        "udevd",
+        "logger"
+      ],
+      "version": "262.1-1"
+    },
+    {
+      "package": "libsystemd0",
+      "cve": "CVE-2026-40228",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-40228",
+      "status": "component_absent",
+      "forbidden": [
+        "systemd-homed",
+        "systemd-oomd",
+        "systemd-journald",
+        "journalctl",
+        "systemd-tmpfiles",
+        "systemd-machined",
+        "udevd",
+        "logger"
+      ],
+      "version": "262.1-1"
+    },
+    {
+      "package": "libudev1",
+      "cve": "CVE-2026-16742",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-16742",
+      "status": "fixed",
+      "version": "262.1-1"
+    },
+    {
+      "package": "libudev1",
+      "cve": "CVE-2026-15059",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-15059",
+      "status": "fixed",
+      "version": "262.1-1"
+    },
+    {
+      "package": "libudev1",
+      "cve": "CVE-2013-4392",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2013-4392",
+      "status": "component_absent",
+      "forbidden": [
+        "systemd-homed",
+        "systemd-oomd",
+        "systemd-journald",
+        "journalctl",
+        "systemd-tmpfiles",
+        "systemd-machined",
+        "udevd",
+        "logger"
+      ],
+      "version": "262.1-1"
+    },
+    {
+      "package": "libudev1",
+      "cve": "CVE-2023-31437",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2023-31437",
+      "status": "component_absent",
+      "forbidden": [
+        "systemd-homed",
+        "systemd-oomd",
+        "systemd-journald",
+        "journalctl",
+        "systemd-tmpfiles",
+        "systemd-machined",
+        "udevd",
+        "logger"
+      ],
+      "version": "262.1-1"
+    },
+    {
+      "package": "libudev1",
+      "cve": "CVE-2023-31438",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2023-31438",
+      "status": "component_absent",
+      "forbidden": [
+        "systemd-homed",
+        "systemd-oomd",
+        "systemd-journald",
+        "journalctl",
+        "systemd-tmpfiles",
+        "systemd-machined",
+        "udevd",
+        "logger"
+      ],
+      "version": "262.1-1"
+    },
+    {
+      "package": "libudev1",
+      "cve": "CVE-2023-31439",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2023-31439",
+      "status": "component_absent",
+      "forbidden": [
+        "systemd-homed",
+        "systemd-oomd",
+        "systemd-journald",
+        "journalctl",
+        "systemd-tmpfiles",
+        "systemd-machined",
+        "udevd",
+        "logger"
+      ],
+      "version": "262.1-1"
+    },
+    {
+      "package": "libudev1",
+      "cve": "CVE-2026-40228",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-40228",
+      "status": "component_absent",
+      "forbidden": [
+        "systemd-homed",
+        "systemd-oomd",
+        "systemd-journald",
+        "journalctl",
+        "systemd-tmpfiles",
+        "systemd-machined",
+        "udevd",
+        "logger"
+      ],
+      "version": "262.1-1"
+    },
+    {
+      "package": "libx11-6",
+      "cve": "CVE-2026-88806",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-88806",
+      "status": "fixed",
+      "version": "2:1.8.14+utils1"
+    },
+    {
+      "package": "libx11-6",
+      "cve": "CVE-2026-94283",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-94283",
+      "status": "fixed",
+      "version": "2:1.8.14+utils1"
+    },
+    {
+      "package": "libx11-6",
+      "cve": "CVE-2026-94284",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-94284",
+      "status": "fixed",
+      "version": "2:1.8.14+utils1"
+    },
+    {
+      "package": "libx11-6",
+      "cve": "CVE-2026-94285",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-94285",
+      "status": "fixed",
+      "version": "2:1.8.14+utils1"
+    },
+    {
+      "package": "libxi6",
+      "cve": "CVE-2026-93541",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-93541",
+      "status": "fixed",
+      "version": "2:1.8.4+utils1"
+    },
+    {
+      "package": "libxi6",
+      "cve": "CVE-2026-93542",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-93542",
+      "status": "fixed",
+      "version": "2:1.8.4+utils1"
+    },
+    {
+      "package": "libxi6",
+      "cve": "CVE-2026-93543",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-93543",
+      "status": "fixed",
+      "version": "2:1.8.4+utils1"
+    },
+    {
+      "package": "libxi6",
+      "cve": "CVE-2026-93544",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-93544",
+      "status": "fixed",
+      "version": "2:1.8.4+utils1"
+    },
+    {
+      "package": "libxi6",
+      "cve": "CVE-2026-93545",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-93545",
+      "status": "fixed",
+      "version": "2:1.8.4+utils1"
+    },
+    {
+      "package": "libxi6",
+      "cve": "CVE-2026-94281",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-94281",
+      "status": "fixed",
+      "version": "2:1.8.4+utils1"
+    },
+    {
+      "package": "libxi6",
+      "cve": "CVE-2026-94282",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-94282",
+      "status": "fixed",
+      "version": "2:1.8.4+utils1"
+    },
+    {
+      "package": "libxrender1",
+      "cve": "CVE-2026-88807",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-88807",
+      "status": "fixed",
+      "version": "1:0.9.13+utils1"
+    },
+    {
+      "package": "zlib1g",
+      "cve": "CVE-2026-27171",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-27171",
+      "status": "fixed",
+      "version": "1:1.3.2+df84af2+utils1"
+    },
+    {
+      "package": "zlib1g",
+      "cve": "CVE-2026-85091",
+      "source": "https://security-tracker.debian.org/tracker/CVE-2026-85091",
+      "status": "fixed",
+      "version": "1:1.3.2+df84af2+utils1"
+    },
+    {
+      "package": "zlib1g",
+      "cve": "CVE-2023-45853",
+      "status": "component_absent",
+      "forbidden": [
+        "libminizip",
+        "pyminizip"
+      ],
+      "source": "https://security-tracker.debian.org/tracker/CVE-2023-45853",
+      "version": "1:1.3.2+df84af2+utils1"
+    }
+  ]
+}

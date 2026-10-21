@@ -59,16 +59,26 @@ func parserOutcome(outcome string) string {
 }
 func RequestDetailSummary(ctx context.Context, status int, writeFailed, settled, fallback bool, started time.Time, r Request) {
 	serviceFailure := status >= 500 || writeFailed
-	toolRequest := r.Route == "/v1/pdf/text" && r.Method == "POST"
+	toolRequest := (r.Route == "/v1/pdf/text" || r.Route == "/v1/html/markdown") && r.Method == "POST"
 	stage := r.Stage
 	switch stage {
 	case "headers", "verify", "upload", "document_check", "parse", "prepare", "settle", "write":
 	default:
 		stage = "unknown"
 	}
-	fields := []any{"telemetry", "summary", "role", "server", "schema", 5, "route", AccessRoute(r.Route), "method", AccessMethod(r.Method), "request_id", Trace(ctx), "status", status, "code", Code(r.Code), "stage", stage, "elapsed_ms", Milliseconds(started),
+	outcome := "response"
+	quoteIssued := toolRequest && status == 402 && stage == "headers"
+	paymentRejected := toolRequest && ((status == 402 && stage == "verify") || (stage == "headers" && (r.Code == "invalid_payment_header" || r.Code == "ambiguous_content_headers")))
+	if quoteIssued {
+		outcome = "quote_issued"
+	} else if paymentRejected {
+		outcome = "payment_rejected"
+	} else if serviceFailure {
+		outcome = "service_failure"
+	}
+	fields := []any{"telemetry", "summary", "role", "server", "schema", 5, "route", AccessRoute(r.Route), "method", AccessMethod(r.Method), "request_id", Trace(ctx), "status", status, "code", Code(r.Code), "outcome", outcome, "stage", stage, "elapsed_ms", Milliseconds(started),
 		"verify_ms", r.VerifyMS, "upload_ms", r.UploadMS, "check_ms", r.CheckMS, "parse_ms", r.ParseMS, "prepare_ms", r.PrepareMS, "settle_ms", r.SettleMS, "pdfium", parserOutcome(r.PDFium), "poppler", parserOutcome(r.Poppler),
-		"requests", 1, "tool_requests", Count(toolRequest), "completed", Count(toolRequest && status == 200 && !writeFailed), "document_failures", Count(status == 422), "service_failures", Count(serviceFailure), "paid_service_failures", Count(settled && serviceFailure), "capacity_refusals", Count(status == 429), "fallback_attempts", Count(fallback), "write_failed", writeFailed}
+		"requests", 1, "tool_requests", Count(toolRequest), "quotes_issued", Count(quoteIssued), "payment_rejections", Count(paymentRejected), "completed", Count(toolRequest && status == 200 && !writeFailed), "document_failures", Count(status == 422), "service_failures", Count(serviceFailure), "paid_service_failures", Count(settled && serviceFailure), "capacity_refusals", Count(status == 429), "fallback_attempts", Count(fallback), "write_failed", writeFailed}
 	if status == 400 && r.Code == "noncanonical_request_url" {
 		fields = append(fields, "query_present", r.NoncanonicalQuery, "encoded_path", r.NoncanonicalPath)
 	}

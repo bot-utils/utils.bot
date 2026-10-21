@@ -70,7 +70,9 @@ func staticSiteManagementStatement(account, region string) awsiam.PolicyStatemen
 func staticSiteBoundaryStatement(account, region string) awsiam.PolicyStatement {
 	// Keep the protected ceiling compact. The identity policy above lists
 	// exact metadata reads; this bucket ARN cannot authorize object access.
-	return staticSiteBucketPermissions(account, region, []string{"s3:GetBucket*", "s3:Get*Configuration", "s3:ListBucket", "s3:ListTagsForResource"})
+	statement := staticSiteBucketPermissions(account, region, []string{"s3:Get*", "s3:ListBucket", "s3:ListTagsForResource", "s3:PutLifecycleConfiguration"})
+	statement.AddResources(jsii.String("arn:aws:s3:::" + threatBucketName(account)))
+	return statement
 }
 
 func staticSiteBucketPermissions(account, region string, reads []string) awsiam.PolicyStatement {

@@ -21,7 +21,7 @@ func TestExplicitPaymentConfiguration(t *testing.T) {
 		if q.Accepts[0].Amount != "10000" || q.Accepts[0].PayTo != cfg.PayTo() || q.Accepts[0].Network != cfg.Network() {
 			t.Fatal("quote mismatch")
 		}
-		for _, notice := range []string{SourceRiskNotice, "100 MiB", "100 returned pages", "1 MiB text", "full quoted fee applies to successful partial or blank results", TermsVersion} {
+		for _, notice := range []string{"100 MiB", "100 returned pages", "1 MiB text", "full quoted fee applies to successful partial or blank results", TermsVersion} {
 			if !strings.Contains(q.Resource.Description, notice) {
 				t.Fatal("prepayment disclosure missing", notice)
 			}
@@ -41,6 +41,25 @@ func TestExplicitPaymentConfiguration(t *testing.T) {
 	for _, tc := range [][2]string{{"unknown", addr}, {ModeMock, addr}, {ModeBase, ""}, {ModeSepolia, PayTo}, {ModeBase, "0x" + strings.Repeat("0", 40)}, {ModeBase, "0xnothex"}} {
 		if _, err := NewConfig(tc[0], tc[1]); err == nil {
 			t.Fatal("unsafe config accepted")
+		}
+	}
+}
+
+func TestEveryPaymentQuoteDisclosesRequestedSourceRisk(t *testing.T) {
+	for _, mode := range []string{ModeMock, ModeSepolia, ModeBase} {
+		address := ""
+		if mode != ModeMock {
+			address = "0x" + strings.Repeat("2", 40)
+		}
+		cfg, err := NewConfig(mode, address)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, operation := range []Config{cfg, cfg.ForSize(100 << 20), cfg.ForHTML(), cfg.ForHTML().WithHTMLJavaScript(true)} {
+			quote := operation.Quote("https://api.utils.bot/tool")
+			if !strings.Contains(quote.Resource.Description, SourceRiskNotice) || !strings.Contains(quote.Resource.Description, TermsVersion) {
+				t.Fatal("source risk or version omitted from prepayment quote", mode)
+			}
 		}
 	}
 }

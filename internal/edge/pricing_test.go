@@ -26,7 +26,7 @@ for (const [size,amount] of [[undefined,'10000'],[26214400,'10000'],[26214401,'2
  if(r.statusCode!==402 || body.accepts[0].amount!==amount || JSON.stringify(body)!==JSON.stringify(header))throw Error('incorrect quote');
 }
 `
-	if raw, err := exec.Command("node", "-e", code+check).CombinedOutput(); err != nil {
+	if raw, err := exec.Command("node", "-e", edgeLogCapture+code+check).CombinedOutput(); err != nil {
 		t.Fatalf("edge price parity: %v %s", err, raw)
 	}
 }
