@@ -62,7 +62,12 @@ func RequestDetailSummary(ctx context.Context, status int, writeFailed, settled,
 	serviceFailure := status >= 500 || writeFailed
 	toolRequest := (r.Route == "/v1/pdf/text" || r.Route == "/v1/html/markdown") && r.Method == "POST"
 	quoteIssued := toolRequest && status == 402 && r.Stage == "headers" && r.Code == ""
-	paymentRejected := toolRequest && ((r.Stage == "verify" && (status == 400 || status == 402 || status == 409 || status == 422)) || (status == 400 && (r.Code == "invalid_payment_header" || r.Code == "ambiguous_content_headers")))
+	// The payment service can definitively reject an authorization after upload
+	// or parsing. Require its fixed rejection codes and a payment stage; a status
+	// alone must not turn a provider failure or uncertain settlement into rejection.
+	paymentStage := r.Stage == "verify" || r.Stage == "document_check" || r.Stage == "settle"
+	definitivePaymentRejection := status == 402 && paymentStage && (r.Code == "invalid_payment" || r.Code == "payment_amount_mismatch")
+	paymentRejected := toolRequest && (definitivePaymentRejection || (r.Stage == "verify" && (status == 400 || status == 409 || status == 422)) || (status == 400 && (r.Code == "invalid_payment_header" || r.Code == "ambiguous_content_headers")))
 	outcome := "other"
 	switch {
 	case paymentRejected:
