@@ -90,30 +90,34 @@ func cloudFrontAccessLogsStack(app awscdk.App, account, distributionID string) a
 // This stack has no assets and deploys with the caller credentials. CDK's
 // BootstraplessSynthesizer still defaults to a bootstrap deploy role when its
 // DeployRoleArn is omitted, so emit only the dedicated execution role here.
-type cloudFrontLoggingSynthesizer struct {
+type assetFreeSynthesizer struct {
 	awscdk.StackSynthesizer
 	executionRole *string
 }
 
 func newCloudFrontLoggingSynthesizer(account string) awscdk.IStackSynthesizer {
-	s := &cloudFrontLoggingSynthesizer{executionRole: jsii.String(namedRoleArn(account, "utils-bot-cloudfront-logging-execution"))}
+	return newAssetFreeSynthesizer(namedRoleArn(account, "utils-bot-cloudfront-logging-execution"))
+}
+
+func newAssetFreeSynthesizer(role string) awscdk.IStackSynthesizer {
+	s := &assetFreeSynthesizer{executionRole: jsii.String(role)}
 	awscdk.NewStackSynthesizer_Override(s)
 	return s
 }
 
-func (s *cloudFrontLoggingSynthesizer) CloudFormationExecutionRole() *string {
+func (s *assetFreeSynthesizer) CloudFormationExecutionRole() *string {
 	return s.executionRole
 }
 
-func (s *cloudFrontLoggingSynthesizer) Synthesize(session awscdk.ISynthesisSession) {
+func (s *assetFreeSynthesizer) Synthesize(session awscdk.ISynthesisSession) {
 	s.SynthesizeStackTemplate(s.BoundStack(), session)
 	s.EmitArtifact(session, &awscdk.SynthesizeStackArtifactOptions{CloudFormationExecutionRoleArn: s.executionRole})
 }
 
-func (s *cloudFrontLoggingSynthesizer) AddFileAsset(_ *awscdk.FileAssetSource) *awscdk.FileAssetLocation {
-	panic("CloudFront logging stack does not support file assets")
+func (s *assetFreeSynthesizer) AddFileAsset(_ *awscdk.FileAssetSource) *awscdk.FileAssetLocation {
+	panic("asset-free stack does not support file assets")
 }
 
-func (s *cloudFrontLoggingSynthesizer) AddDockerImageAsset(_ *awscdk.DockerImageAssetSource) *awscdk.DockerImageAssetLocation {
-	panic("CloudFront logging stack does not support image assets")
+func (s *assetFreeSynthesizer) AddDockerImageAsset(_ *awscdk.DockerImageAssetSource) *awscdk.DockerImageAssetLocation {
+	panic("asset-free stack does not support image assets")
 }

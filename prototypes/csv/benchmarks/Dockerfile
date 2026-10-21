@@ -1,0 +1,6 @@
+FROM python:3.9-slim-bookworm@sha256:a02e9c5406c416c504d6c9a1a306ff4080c3173f1008d192f953bd20382a2d5c
+COPY --chmod=0444 worker.py /app/worker.py
+RUN chmod 0555 /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 SQLITE_TMPDIR=/work
+USER 10001:10001
+ENTRYPOINT ["python", "/app/worker.py"]

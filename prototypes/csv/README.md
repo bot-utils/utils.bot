@@ -216,3 +216,5 @@ against its existing tools with latency, peak memory, task success and total cos
 demonstrate repeat demand and margin; review cloud isolation, abuse controls,
 privacy and recovery; and integrate the existing payment contract without extra
 charges on uncertain retries. Local byte reduction is only one feasibility metric.
+
+Optional fixed-schema synthetic backend diagnostics and pinned-rate cost calculations are in [benchmarks](benchmarks/). They are separate from the HTTP prototype and contain no cloud job dispatcher.
