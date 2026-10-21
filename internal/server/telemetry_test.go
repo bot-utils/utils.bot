@@ -127,7 +127,7 @@ func TestLeanLogsLocateFailedStageWithoutCustomerMetadata(t *testing.T) {
 	if json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &record) != nil {
 		t.Fatal(buf.String())
 	}
-	if w.Code != 502 || record["stage"] != "settle" || record["code"] != "payment_unavailable" || record["pdfium"] != "success" || record["schema"] != float64(5) {
+	if w.Code != 502 || record["stage"] != "settle" || record["code"] != "payment_unavailable" || record["pdfium"] != "success" || record["schema"] != float64(6) {
 		t.Fatal(record)
 	}
 	for _, field := range []string{"verify_ms", "upload_ms", "check_ms", "parse_ms", "prepare_ms", "settle_ms"} {
@@ -138,5 +138,40 @@ func TestLeanLogsLocateFailedStageWithoutCustomerMetadata(t *testing.T) {
 	}
 	if len(buf.Bytes()) > 2048 || strings.Contains(buf.String(), "PRIVATE") || strings.Contains(buf.String(), "SECRET") {
 		t.Fatal("excess log content", buf.String())
+	}
+}
+
+func TestPaymentPanicIsRecoveredWithoutLoggingItsValue(t *testing.T) {
+	var logs bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(old) })
+	s := New("http://example.test/v1/pdf/text", func(context.Context, protocol.PaymentRequest) (protocol.PaymentResponse, error) {
+		panic("private-provider-value-canary")
+	}, func(context.Context, []byte) (parser.Result, error) {
+		t.Fatal("parsed after panic")
+		return parser.Result{}, nil
+	})
+	r := httptest.NewRequest(http.MethodPost, "/v1/pdf/text", strings.NewReader("%PDF-1.7"))
+	r.Header.Set("Content-Type", "application/pdf")
+	r.Header.Set("PAYMENT-SIGNATURE", "fixture")
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, r)
+	if w.Code != 502 || len(s.Slots) != 0 || strings.Contains(logs.String()+w.Body.String(), "private-provider-value-canary") {
+		t.Fatal("unsafe panic response or leaked slot")
+	}
+	found := false
+	for _, line := range bytes.Split(logs.Bytes(), []byte("\n")) {
+		var v map[string]any
+		if json.Unmarshal(line, &v) != nil || v["msg"] != "request summary" {
+			continue
+		}
+		found = true
+		if v["schema"] != float64(6) || v["panic_recovered"] != true || v["outcome"] != "service_failure" || v["service_failures"] != float64(1) {
+			t.Fatal("panic diagnostic missing", v)
+		}
+	}
+	if !found {
+		t.Fatal("missing request summary")
 	}
 }
