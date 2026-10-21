@@ -18,7 +18,9 @@ func cloudFrontAccessLogsStack(app awscdk.App, account, distributionID string) a
 	stack := awscdk.NewStack(app, jsii.String("AgentPdfCloudFrontAccessLogs"), &awscdk.StackProps{
 		Env:         &awscdk.Environment{Account: jsii.String(account), Region: jsii.String("us-east-1")},
 		Description: jsii.String("Privacy-minimized CloudFront standard logging v2 delivery"),
-		Synthesizer: pdfEdgeSynthesizer(account),
+		// Deploy with the caller credentials and pass only the logging role.
+		// This stack does not use the PDF/HTML deployment identity or boundary.
+		Synthesizer: newCloudFrontLoggingSynthesizer(account),
 	})
 	awscdk.Tags_Of(stack).Add(jsii.String("Project"), jsii.String("agent-pdf"), nil)
 
@@ -69,6 +71,7 @@ func cloudFrontAccessLogsStack(app awscdk.App, account, distributionID string) a
 		Properties: &map[string]interface{}{
 			"DeliverySourceName":     "agent-pdf-cloudfront-access-v2",
 			"DeliveryDestinationArn": destination.GetAtt(jsii.String("Arn"), awscdk.ResolutionTypeHint_STRING).ToString(),
+			"Tags":                   []map[string]string{{"Key": "Purpose", "Value": "utils-bot-cloudfront-access"}},
 			// Keep the field list private by default: no IP address, host,
 			// URI, query, cookie, referrer, user agent, or request ID.
 			"RecordFields": []string{
@@ -82,4 +85,35 @@ func cloudFrontAccessLogsStack(app awscdk.App, account, distributionID string) a
 	delivery.AddDependency(resourcePolicy)
 	awscdk.NewCfnOutput(stack, jsii.String("CloudFrontAccessLogGroup"), &awscdk.CfnOutputProps{Value: group.LogGroupName()})
 	return stack
+}
+
+// This stack has no assets and deploys with the caller credentials. CDK's
+// BootstraplessSynthesizer still defaults to a bootstrap deploy role when its
+// DeployRoleArn is omitted, so emit only the dedicated execution role here.
+type cloudFrontLoggingSynthesizer struct {
+	awscdk.StackSynthesizer
+	executionRole *string
+}
+
+func newCloudFrontLoggingSynthesizer(account string) awscdk.IStackSynthesizer {
+	s := &cloudFrontLoggingSynthesizer{executionRole: jsii.String(namedRoleArn(account, "utils-bot-cloudfront-logging-execution"))}
+	awscdk.NewStackSynthesizer_Override(s)
+	return s
+}
+
+func (s *cloudFrontLoggingSynthesizer) CloudFormationExecutionRole() *string {
+	return s.executionRole
+}
+
+func (s *cloudFrontLoggingSynthesizer) Synthesize(session awscdk.ISynthesisSession) {
+	s.SynthesizeStackTemplate(s.BoundStack(), session)
+	s.EmitArtifact(session, &awscdk.SynthesizeStackArtifactOptions{CloudFormationExecutionRoleArn: s.executionRole})
+}
+
+func (s *cloudFrontLoggingSynthesizer) AddFileAsset(_ *awscdk.FileAssetSource) *awscdk.FileAssetLocation {
+	panic("CloudFront logging stack does not support file assets")
+}
+
+func (s *cloudFrontLoggingSynthesizer) AddDockerImageAsset(_ *awscdk.DockerImageAssetSource) *awscdk.DockerImageAssetLocation {
+	panic("CloudFront logging stack does not support image assets")
 }
