@@ -54,7 +54,7 @@ def baseline():
                'logs.us-east-2.amazonaws.com', 's3.us-east-2.amazonaws.com',
                'utils-bot-csv-trial-' + ACCOUNT + '-us-east-2.s3.us-east-2.amazonaws.com',
                'prod-us-east-2-starport-layer-bucket.s3.us-east-2.amazonaws.com']
-    return dict(checked_at=datetime.now(timezone.utc).isoformat(), cleanup_confirmed=True, active_owned_workers=[],
+    return dict(checked_at=datetime.now(timezone.utc).isoformat(), cleanup_confirmed=True, active_owned_workers=[], network_interfaces=[],
                 nontrial_dns_associations_before=[], nontrial_dns_associations_after=[],
                 vpc=dict(VpcId=e['vpc_id'], State='available', CidrBlock='10.88.0.0/24',
                          Tags=[dict(Key='Purpose', Value='utils-bot-csv-trial')]),
@@ -118,6 +118,23 @@ class AdmissionTests(unittest.TestCase):
         self.assertIn('worker_rules_not_verified', network_failures(row, EXPECTED))
         row['endpoints'] = row['endpoints'][:1]
         self.assertEqual(phase_one_failures(row, EXPECTED), [])
+
+    def test_preparation_accepts_only_standard_or_empty_default_rules(self):
+        row = baseline(); row['endpoints'] = row['endpoints'][:1]
+        group = row['default_security_group']
+        group['IpPermissions'] = [dict(IpProtocol='-1', UserIdGroupPairs=[dict(GroupId=EXPECTED['default_sg_id'], UserId=ACCOUNT)])]
+        group['IpPermissionsEgress'] = [dict(IpProtocol='-1', IpRanges=[dict(CidrIp='0.0.0.0/0')])]
+        self.assertEqual(phase_one_failures(row, EXPECTED), [])
+        group['IpPermissions'].append(dict(IpProtocol='-1', IpRanges=[dict(CidrIp='0.0.0.0/0')]))
+        self.assertIn('unexpected_initial_default_sg_rules', phase_one_failures(row, EXPECTED))
+        row = baseline(); row['endpoints'] = row['endpoints'][:1]; row['network_interfaces'] = [{'id':'eni-unexpected'}]
+        self.assertIn('preparation_has_network_interfaces_or_unknown', phase_one_failures(row, EXPECTED))
+
+    def test_preparation_dummy_is_endpoint_egress_only(self):
+        row = baseline(); row['endpoints'] = row['endpoints'][:1]
+        row['worker_security_groups'][0]['IpPermissionsEgress'].append(
+            dict(IpProtocol='icmp', FromPort=252, ToPort=86, IpRanges=[dict(CidrIp='255.255.255.255/32')]))
+        self.assertIn('worker_rules_not_verified', phase_one_failures(row, EXPECTED))
 
     def test_nontrial_dns_changes_are_rejected(self):
         row = baseline(); row['nontrial_dns_associations_after'] = [dict(Id='foreign', VpcId='vpc-production')]

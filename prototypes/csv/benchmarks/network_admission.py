@@ -87,14 +87,14 @@ def dns_rules_ok(snapshot, expected):
 
 
 def worker_rules_ok(snapshot, expected, preparation_only=False):
-    def signatures(rules):
+    def signatures(rules, endpoint_placeholder=False):
         result = set()
         for rule in rules:
             protocol, start, end = rule['IpProtocol'], rule.get('FromPort'), rule.get('ToPort')
             if rule.get('Ipv6Ranges'):
                 return None
             for ip in rule.get('IpRanges', []):
-                if not preparation_only or (protocol, start, end, ip.get('CidrIp')) != ('icmp', 252, 86, '255.255.255.255/32'):
+                if not (preparation_only and endpoint_placeholder) or (protocol, start, end, ip.get('CidrIp')) != ('icmp', 252, 86, '255.255.255.255/32'):
                     return None
             for pair in rule.get('UserIdGroupPairs', []):
                 if pair.get('VpcPeeringConnectionId') or pair.get('UserId', expected['account_id']) != expected['account_id']:
@@ -116,9 +116,28 @@ def worker_rules_ok(snapshot, expected, preparation_only=False):
         if (group['GroupId'] not in wanted or group['VpcId'] != expected['vpc_id'] or
                 {t['Key']: t['Value'] for t in group.get('Tags', [])}.get('Purpose') != 'utils-bot-csv-trial'):
             return False
-        if (signatures(group['IpPermissions']), signatures(group['IpPermissionsEgress'])) != wanted.pop(group['GroupId']):
+        if (signatures(group['IpPermissions']), signatures(group['IpPermissionsEgress'], endpoint_placeholder=group['GroupId'] == endpoint)) != wanted.pop(group['GroupId']):
             return False
     return not wanted
+
+
+def initial_default_rules_ok(group, expected):
+    ingress, egress = group.get('IpPermissions'), group.get('IpPermissionsEgress')
+    if ingress == [] and egress == []:
+        return True
+    if not isinstance(ingress, list) or not isinstance(egress, list) or len(ingress) != 1 or len(egress) != 1:
+        return False
+    inbound, outbound = ingress[0], egress[0]
+    peers = inbound.get('UserIdGroupPairs', [])
+    return (inbound.get('IpProtocol') == '-1' and
+            inbound.get('FromPort') is None and inbound.get('ToPort') is None and
+            not any(inbound.get(k) for k in ('IpRanges', 'Ipv6Ranges', 'PrefixListIds')) and
+            len(peers) == 1 and peers[0].get('GroupId') == expected['default_sg_id'] and
+            peers[0].get('UserId') == expected['account_id'] and not peers[0].get('VpcPeeringConnectionId') and
+            outbound.get('IpProtocol') == '-1' and
+            outbound.get('FromPort') is None and outbound.get('ToPort') is None and
+            len(outbound.get('IpRanges', [])) == 1 and outbound['IpRanges'][0].get('CidrIp') == '0.0.0.0/0' and
+            not any(outbound.get(k) for k in ('UserIdGroupPairs', 'Ipv6Ranges', 'PrefixListIds')))
 
 
 def _network_failures(snapshot, expected, now=None, preparation_only=False):
@@ -159,6 +178,10 @@ def _network_failures(snapshot, expected, now=None, preparation_only=False):
                 default['GroupName'] != 'default' or
                 (not preparation_only and (default.get('IpPermissions') != [] or default.get('IpPermissionsEgress') != []))):
             errors.append('default_security_group_not_hardened')
+        if preparation_only and not initial_default_rules_ok(default, expected):
+            errors.append('unexpected_initial_default_sg_rules')
+        if preparation_only and snapshot.get('network_interfaces') != []:
+            errors.append('preparation_has_network_interfaces_or_unknown')
         if {t['Key']:t['Value'] for t in default.get('Tags', [])}.get('Purpose') is not None:
             errors.append('default_security_group_must_remain_unowned_by_network_role')
         if snapshot.get('default_sg_network_interfaces') != []:
