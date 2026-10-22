@@ -95,6 +95,61 @@ class Ledger:
         self.etag = result['ETag']
 
 
+    def review_stopped_dns_failure(self, plan, proof, revision, previous_plan=None):
+        """Explicit operator recovery of this known failure, never a new lease.
+
+        Keep the failed attempt and its entire reservation. Only previously
+        unattempted tiers may follow; uncertain starts cannot use this path.
+        """
+        if self.state is not None or not re.fullmatch(r'[0-9a-f]{40}', revision):
+            raise TrialFailure('invalid_recovery_review')
+        path = self.directory / 'recovery-readback.json'
+        result = self.aws.call('s3api', 'get-object', '--bucket', BUCKET, '--key', KEY, str(path))
+        state = json.loads(path.read_text())
+        jobs = state.get('jobs', [])
+        original = previous_plan or plan
+        def resources(value):
+            value = json.loads(json.dumps(value))
+            for task in value['task_definitions']:
+                image = task['containerDefinitions'][0]['image']
+                if not re.fullmatch(ACCOUNT + r'[.]dkr[.]ecr[.]us-east-2[.]amazonaws[.]com/' +
+                                    NAME + r'@sha256:[a-f0-9]{64}', image):
+                    raise TrialFailure('recovery_image_namespace')
+                task['containerDefinitions'][0]['image'] = 'reviewed_immutable_trial_image'
+            return value
+        if resources(original) != resources(plan):
+            raise TrialFailure('recovery_resource_scope_changed')
+        if (state.get('phase') != 'failed_or_uncertain' or len(jobs) != 1 or
+                state.get('workers_termination_confirmed') is not True or
+                state.get('recovery_review') or not jobs[0].get('id') or
+                jobs[0]['provider'] != 'fargate' or
+                jobs[0]['label'] != NAME + '-arm-small' or
+                state.get('plan_sha256') != hashlib.sha256(json.dumps(original, sort_keys=True).encode()).hexdigest()):
+            raise TrialFailure('recovery_scope_mismatch')
+        if (proof.get('taskArn') != jobs[0]['id'] or proof.get('lastStatus') != 'STOPPED' or
+                proof.get('stopCode') != 'TaskFailedToStart' or
+                'lookup prod-us-east-2-starport-layer-bucket.s3.us-east-2.amazonaws.com' not in proof.get('stoppedReason', '') or
+                'no such host' not in proof.get('stoppedReason', '')):
+            raise TrialFailure('terminal_failure_not_proven')
+        reservation = network_costs.estimate()
+        if not network_costs.reservation_fits_reviewed_scope(reservation, 0, 0, 5, True, True, True, 6):
+            raise TrialFailure('cost_reservation')
+        state['previous_plan'] = original
+        state['previous_plan_sha256'] = state['plan_sha256']
+        state['plan_sha256'] = hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()
+        state['original_reservation'] = state['reservation']
+        state['reservation'] = reservation
+        jobs[0].update(state='failed_terminal_reviewed', provider_terminal='STOPPED', provider_evidence=proof)
+        state.update(phase='claimed', recovery_review={'revision': revision, 'proof_sha256': document_hash(proof),
+                     'scope': 'continue only five unattempted tiers; retain the failed first attempt',
+                     'immutable_images_repinned': original != plan,
+                     'controller_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()})
+        state['cleanup_confirmed'] = False
+        state['workers_termination_confirmed'] = False
+        self.state, self.etag = state, result['ETag']
+        self.save()
+
+
 def subset(expected, actual):
     """Compare planned fields and leave provider metadata to separate checks."""
     if isinstance(expected, dict):
@@ -237,8 +292,10 @@ class Controller:
         state = self.ledger.state
         if state['phase'] not in ('claimed', 'running') or len(state['jobs']) >= 6:
             raise TrialFailure('dispatch_limit')
-        if state['jobs'] and state['jobs'][-1].get('state') != 'verified':
+        if state['jobs'] and state['jobs'][-1].get('state') not in ('verified', 'failed_terminal_reviewed'):
             raise TrialFailure('previous_job_unconfirmed')
+        if any(job['label'] == label for job in state['jobs']):
+            raise TrialFailure('tier_already_attempted')
         job = {'label': label, 'provider': provider, 'token': uuid.uuid4().hex,
                'state': 'submission_reserved', 'reserved_at_epoch': time.time()}
         state['jobs'].append(job)
@@ -347,12 +404,19 @@ class Controller:
     def _run(self):
         if self.ledger.state is None:
             self.ledger.claim(self.plan)
+        if self.ledger.state['phase'] not in ('claimed', 'running'):
+            raise TrialFailure('trial_already_finished')
         tiers = [('fargate', t) for t in self.plan['task_definitions']]
         tiers += [('glue', t) for t in self.plan['glue_jobs']]
         if len(tiers) != 6:
             raise TrialFailure('invalid_trial_plan')
         try:
+            attempted = {job['label'] for job in self.ledger.state['jobs']}
+            if len(attempted) != len(self.ledger.state['jobs']):
+                raise TrialFailure('duplicate_prior_attempt')
             for provider, wanted in tiers:
+                if wanted.get('family', wanted.get('Name')) in attempted:
+                    continue
                 self.admission()
                 label = wanted.get('family', wanted.get('Name'))
                 job = self.reserve(label, provider)
@@ -373,7 +437,8 @@ class Controller:
                 self.ledger.save()
                 self.emit({'event': 'job_verified', 'tier': label,
                            'provider_terminal': job['provider_terminal']})
-            self.ledger.state['phase'] = 'workers_verified'
+            self.ledger.state['phase'] = ('attempts_complete' if any(
+                job['state'] == 'failed_terminal_reviewed' for job in self.ledger.state['jobs']) else 'workers_verified')
             self.ledger.save()
         except BaseException:
             self.ledger.state['phase'] = 'failed_or_uncertain'

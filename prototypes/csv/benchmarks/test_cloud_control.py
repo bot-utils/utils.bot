@@ -19,6 +19,9 @@ class FakeAWS:
 
     def call(self, service, action, *args):
         self.calls.append((service, action, args))
+        if (service, action) == ('s3api', 'get-object'):
+            Path(args[-1]).write_text(json.dumps(self.saved[-1]))
+            return {'ETag': self.etag}
         if (service, action) == ('s3api', 'put-object'):
             options = dict(zip(args[::2], args[1::2]))
             if '--if-none-match' in options:
@@ -196,6 +199,52 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(job['id'], task)
         self.assertEqual(stopped, [task])
         self.assertTrue(ledger.state['workers_termination_confirmed'])
+
+    def dns_failed_ledger(self):
+        aws = FakeAWS(); ledger = control.Ledger(aws, self.root()); plan = self.plan()
+        ledger.claim(plan)
+        task = control.TASK_PREFIX + '1'*32
+        ledger.state.update(phase='failed_or_uncertain', workers_termination_confirmed=True)
+        ledger.state['jobs'] = [{'label':control.NAME+'-arm-small','provider':'fargate',
+                                 'token':'old-token','id':task,'state':'submitted'}]
+        ledger.save()
+        proof = {'taskArn':task,'lastStatus':'STOPPED','stopCode':'TaskFailedToStart',
+                 'stoppedReason':'lookup prod-us-east-2-starport-layer-bucket.s3.us-east-2.amazonaws.com: no such host'}
+        return aws, plan, proof
+
+    def test_reviewed_dns_recovery_runs_only_five_unattempted_tiers(self):
+        aws, plan, proof = self.dns_failed_ledger()
+        lease = aws.saved[-1]['trial_id']
+        ledger = control.Ledger(aws, self.root())
+        original = copy.deepcopy(plan)
+        for task in plan['task_definitions']:
+            task['containerDefinitions'][0]['image'] = '818416606421.dkr.ecr.us-east-2.amazonaws.com/utils-bot-csv-trial@sha256:'+'a'*64
+        ledger.review_stopped_dns_failure(plan, proof, 'a'*40, previous_plan=original)
+        self.assertTrue(ledger.state['recovery_review']['immutable_images_repinned'])
+        runner = SuccessController(aws, ledger, plan, {})
+        runner.run()
+        self.assertEqual(len(runner.submitted), 5)
+        self.assertEqual(len(ledger.state['jobs']), 6)
+        self.assertEqual(ledger.state['trial_id'], lease)
+        self.assertEqual(ledger.state['jobs'][0]['state'], 'failed_terminal_reviewed')
+        self.assertEqual(ledger.state['phase'], 'attempts_complete')
+        self.assertEqual(ledger.state['reservation']['jobs'], 6)
+        with self.assertRaises(control.TrialFailure):
+            control.Ledger(aws, self.root()).claim(plan)
+
+    def test_recovery_rejects_unknown_changed_or_nonterminal_failure(self):
+        for changed in ('unknown', 'different_task', 'running', 'different_failure', 'different_plan'):
+            with self.subTest(changed=changed):
+                aws, plan, proof = self.dns_failed_ledger()
+                if changed == 'unknown':
+                    aws.saved[-1]['jobs'][0].pop('id')
+                elif changed == 'different_task': proof['taskArn'] += '2'
+                elif changed == 'running': proof['lastStatus'] = 'RUNNING'
+                elif changed == 'different_failure': proof['stoppedReason'] = 'other failure'
+                else: plan['scope'] = 'changed scope'
+                ledger = control.Ledger(aws, self.root())
+                with self.assertRaises(control.TrialFailure):
+                    ledger.review_stopped_dns_failure(plan, proof, 'a'*40)
 
     def test_code_readback_rejects_changed_bytes_before_dispatch(self):
         aws = FakeAWS(); ledger = control.Ledger(aws, self.root())

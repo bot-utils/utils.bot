@@ -53,6 +53,7 @@ def baseline():
                            IpPermissions=inbound, IpPermissionsEgress=outbound))
     allowed = ['api.ecr.us-east-2.amazonaws.com', ACCOUNT + '.dkr.ecr.us-east-2.amazonaws.com',
                'logs.us-east-2.amazonaws.com', 's3.us-east-2.amazonaws.com',
+               's3-r-w.us-east-2.amazonaws.com',
                'utils-bot-csv-trial-' + ACCOUNT + '-us-east-2.s3.us-east-2.amazonaws.com',
                'prod-us-east-2-starport-layer-bucket.s3.us-east-2.amazonaws.com']
     return dict(checked_at=datetime.now(timezone.utc).isoformat(), cleanup_confirmed=True, active_owned_workers=[], network_interfaces=[],

@@ -108,6 +108,7 @@ func csvTrialNetworkStack(app awscdk.App, account, az, s3PrefixList string, paid
 	domains := []string{
 		"api.ecr.us-east-2.amazonaws.com", account + ".dkr.ecr.us-east-2.amazonaws.com",
 		"logs.us-east-2.amazonaws.com", "s3.us-east-2.amazonaws.com",
+		"s3-r-w.us-east-2.amazonaws.com",
 		bucket + ".s3.us-east-2.amazonaws.com",
 		"prod-us-east-2-starport-layer-bucket.s3.us-east-2.amazonaws.com",
 	}

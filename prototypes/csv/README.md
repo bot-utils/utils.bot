@@ -240,3 +240,11 @@ spending cap. Provider cleanup and paid endpoint removal still need independent
 verification; the S3 replay record and zero-cost task-definition metadata can
 remain after the trial. Existing shared log-group settings are
 preserved. No CSV routes are publicly released by this benchmark preparation.
+
+The regional S3 alias `s3-r-w.us-east-2.amazonaws.com` is explicitly allowed
+for AWS's CNAME chain; other external names remain blocked. A startup DNS failure
+still consumes one attempt. An explicit operator recovery path accepts only the
+first known stopped ARM-small DNS failure with matching task evidence and a
+reviewed source revision. It retains the same S3 lease and full reservation and
+runs only the five unattempted tiers. It cannot retry that tier, reset the count
+or resume an uncertain submission.
