@@ -48,6 +48,8 @@ func (f *fakeChain) Lookup(context.Context, Settlement) (Outcome, error) {
 }
 
 type fakeProvider struct {
+	verifyErr      error
+	rejected       bool
 	verify, settle atomic.Int32
 	lost           bool
 	barrier        *sync.WaitGroup
@@ -59,7 +61,10 @@ func (f *fakeProvider) Verify(context.Context, types.PaymentPayload, evm.ExactEI
 		f.barrier.Done()
 		f.barrier.Wait()
 	}
-	return true, nil
+	if f.verifyErr != nil {
+		return false, f.verifyErr
+	}
+	return !f.rejected, nil
 }
 func (f *fakeProvider) Settle(context.Context, types.PaymentPayload, evm.ExactEIP3009Payload) (*x402.SettleResponse, error) {
 	f.settle.Add(1)
@@ -87,15 +92,7 @@ func paymentFixture(t *testing.T) (Payments, Repository, Job, evm.ClientEvmSigne
 	j.Owner = client.Address()
 	seed(t, r, j)
 	m, _ := manifest(j.ID)
-	n := copyJob(j)
-	n.Version++
-	n.Artifact = "RESULT_PREPARED"
-	n.Financial = "AWAITING_PAYMENT"
-	n.Result = &m
-	n.ResultUntil = fixtureTime.Unix() + 1800
-	if e = r.Replace(ctx, j, n); e != nil {
-		t.Fatal(e)
-	}
+	n := prepareSeeded(t, r, j, m)
 	p := &fakeProvider{}
 	c := &fakeChain{}
 	s := Payments{Repo: r, Objects: &fakeVerifier{}, Bind: func(Quote) (Facilitator, error) { return p, nil }, Chain: c, Keys: Keys{Current: "v1", Versions: map[string][]byte{"v1": []byte(strings.Repeat("k", 32))}}, Config: cfg, Gate: Gate{Enabled: true, Settlement: true}, Amount: "12345", Origin: "https://utils.bot", Now: func() time.Time { return fixtureTime }}
@@ -194,16 +191,8 @@ func TestCrossJobProofRejectedBeforeProvider(t *testing.T) {
 	other := fixtureJob()
 	other.Owner = j.Owner
 	seed(t, r, other)
-	n := copyJob(other)
-	n.Version++
 	m, _ := manifest(other.ID)
-	n.Artifact = "RESULT_PREPARED"
-	n.Financial = "AWAITING_PAYMENT"
-	n.Result = &m
-	n.ResultUntil = j.ResultUntil
-	if e = r.Replace(ctx, other, n); e != nil {
-		t.Fatal(e)
-	}
+	_ = prepareSeeded(t, r, other, m)
 	if _, e = s.ResultQuote(ctx, other.ID); e != nil {
 		t.Fatal(e)
 	}
@@ -367,5 +356,136 @@ func TestVerifiedCleanupScrubsOnceAndRetainsUnknownFinancialEvidence(t *testing.
 	got, e := s.Reconcile(ctx, j.ID)
 	if e != nil || got.Artifact != "ERASED" || !got.Remedy {
 		t.Fatal("erased paid result resurrected", e)
+	}
+}
+
+// Exercise every controller lifecycle step instead of seeding skipped states.
+func prepareSeeded(t *testing.T, r Repository, j Job, m Manifest) Job {
+	t.Helper()
+	a := Artifacts{Repo: r, Inputs: inputStub{}, Results: &fakeVerifier{}, Gate: Gate{Enabled: true}, Now: func() time.Time { return fixtureTime }}
+	if e := a.AcceptUploads(ctx, j.ID); e != nil {
+		t.Fatal(e)
+	}
+	verified := readJob(t, r, j.ID)
+	q, e := r.Queue(ctx, verified, ID(), 100, 200)
+	if e != nil {
+		t.Fatal(e)
+	}
+	reserved := copyJob(q)
+	reserved.Version++
+	reserved.Artifact = "DISPATCH_RESERVED"
+	reserved.Dispatch.State = "STARTING"
+	reserved.Dispatch.Started = fixtureTime.Unix()
+	reserved.Dispatch.Parameters = ID()
+	if e = r.Replace(ctx, q, reserved); e != nil {
+		t.Fatal(e)
+	}
+	running := copyJob(reserved)
+	running.Version++
+	running.Artifact = "RUNNING"
+	running.Dispatch.State = "ACTIVE"
+	running.Dispatch.TaskARN = "arn:synthetic:owned"
+	if e = r.Replace(ctx, reserved, running); e != nil {
+		t.Fatal(e)
+	}
+	if e = a.PublishResult(ctx, j.ID, running.Dispatch.Token, m, fixtureTime.Unix()+1800); e != nil {
+		t.Fatal(e)
+	}
+	return readJob(t, r, j.ID)
+}
+
+type eventCollector struct {
+	mu     sync.Mutex
+	events []Event
+}
+
+func (c *eventCollector) Count(_ context.Context, e Event) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.events = append(c.events, e)
+}
+func (c *eventCollector) contains(e Event) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, v := range c.events {
+		if e == v {
+			return true
+		}
+	}
+	return false
+}
+
+type unavailableRepo struct{ JobRepository }
+
+func (unavailableRepo) Get(context.Context, string) (*Job, error) { return nil, ErrUnknown }
+func TestTelemetrySeparatesProviderUncertaintyAdmissionRejectionAndInfrastructure(t *testing.T) {
+	s, r, j, client, p, _ := paymentFixture(t)
+	events := &eventCollector{}
+	s.Events = events
+	q, e := s.AdmissionChallenge(ctx, j.IntentBinding)
+	if e != nil || !events.contains(InitialQuote) {
+		t.Fatal(e)
+	}
+	h := sign(t, s, q, client)
+	p.verifyErr = ErrUnknown
+	if _, _, e = s.VerifyAdmission(ctx, q, h); e != ErrUnknown || !events.contains(ProviderVerifyFailure) || events.contains(PaymentRejected) {
+		t.Fatal("admission provider uncertainty misclassified")
+	}
+	p.verifyErr = nil
+	p.rejected = true
+	if _, _, e = s.VerifyAdmission(ctx, q, h); e != ErrInvalid || !events.contains(PaymentRejected) {
+		t.Fatal("admission rejection not classified")
+	}
+	p.rejected = false
+	events.events = nil
+	p.lost = true
+	result, e := s.ResultQuote(ctx, j.ID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.Settle(ctx, j.ID, sign(t, s, result, client)); e != nil {
+		t.Fatal(e)
+	}
+	if !events.contains(ProviderSettleFailure) || !events.contains(PaymentUnknown) || events.contains(PaymentRejected) || readJob(t, r, j.ID).Financial != "PAYMENT_UNKNOWN" {
+		t.Fatal("settlement error treated as rejection")
+	}
+	for _, e := range events.events {
+		if e.Record().PayerRejected {
+			t.Fatal("uncertain payment counted as payer rejection")
+		}
+	}
+	s.Repo = unavailableRepo{r}
+	if _, e = s.ResultQuote(ctx, j.ID); e == nil || !events.contains(InfrastructureFailure) {
+		t.Fatal("infrastructure error not classified")
+	}
+}
+func TestPersistedSettlementStateIsClosedAndConsistent(t *testing.T) {
+	s, r, j, client, p, _ := paymentFixture(t)
+	q, _ := s.ResultQuote(ctx, j.ID)
+	p.lost = true
+	if _, e := s.Settle(ctx, j.ID, sign(t, s, q, client)); e != nil {
+		t.Fatal(e)
+	}
+	got := readJob(t, r, j.ID)
+	for _, state := range []string{"free-form diagnostic", "PAID", "UNPAID", ""} {
+		bad := copyJob(got)
+		bad.Settlement.State = state
+		if bad.valid() {
+			t.Fatal("invalid/mismatched settlement state accepted", state)
+		}
+	}
+}
+
+func TestGenericReplacementCannotBypassNonceReservation(t *testing.T) {
+	_, r, j, _, _, _ := paymentFixture(t)
+	n := copyJob(j)
+	n.Version++
+	n.Financial = "SETTLEMENT_PENDING"
+	n.Settlement = &Settlement{ID: ID(), Nonce: "0x" + ID(), Payer: j.Owner, Receiver: "0x2222222222222222222222222222222222222222", Asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", Network: "eip155:8453", Amount: "12345", State: "SETTLEMENT_PENDING", Started: fixtureTime.Unix(), ValidBefore: fixtureTime.Unix() + 180}
+	if !n.valid() {
+		t.Fatal("fixture must isolate reservation rule")
+	}
+	if e := r.Replace(ctx, j, n); e != ErrInvalid {
+		t.Fatal("settlement bypassed atomic nonce transaction", e)
 	}
 }
