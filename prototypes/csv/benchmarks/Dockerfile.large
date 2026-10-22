@@ -1,0 +1,6 @@
+FROM python:3.13-slim-bookworm@sha256:e32be0e55814a08977501ca863271d9bd02443710db8f2afaf8372e2c4508530
+COPY --chmod=0444 worker.py fixtures.py cloud_smoke.py large_trial.py /app/
+RUN mkdir -m 0700 /work && chown 10001:10001 /work && chmod 0555 /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+USER 10001:10001
+ENTRYPOINT ["python", "/app/large_trial.py"]
