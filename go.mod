@@ -6,6 +6,8 @@ require (
 	github.com/aws/aws-lambda-go v1.55.1
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.7
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.102.0
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.52.5
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.70.1
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.111.0
 	github.com/aws/aws-sdk-go-v2/service/lambdamicrovms v1.11.2
