@@ -209,8 +209,19 @@ were checked. Real ENOSPC passed locally in a small private tmpfs. The first
 cloud filesystem-full setup failed unverified and remains in its original ledger;
 a fresh cloud cohort passed explicitly injected ENOSPC handling. Physical
 exhaustion of the main Fargate disk is not claimed. No test fills the main task
-or host filesystem. Public release still requires upload/resume, durable jobs,
-payment/retrieval, pricing, monitoring and the shared production worker review.
+or host filesystem.
+
+AWS isolation and 1 GiB evidence cover the pre-correction worker image
+`sha256:fb60410f40aed070086dfb7cacdfd5ab638dc14338d50b394127927c3326c982`.
+The separate completion controls used pre-correction image
+`sha256:649de4bf1a1653adb4809f61e3ff098e389b904ae3c74b0d672bc2f86d3479e8`.
+The final seccomp TSYNC return-value correction in revision `636e906` has local
+Linux regression and rebuilt-worker isolation/failure-test evidence only; that
+corrected image was not rerun on Fargate. Validate the final production image's
+isolation on its actual runtime before release.
+
+Public release still requires upload/resume, durable jobs, payment/retrieval,
+pricing, monitoring and the shared production worker review.
 
 ## Errors
 
