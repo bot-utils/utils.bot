@@ -81,14 +81,29 @@ path and per-job TLS authentication, including shared sibling networking.
 `Processor` durably claims one transfer attempt, reads immutable S3 inputs,
 independently verifies complete gzip/CSV/hash/count evidence, and requires worker
 stop plus separate ENI-absence verification before result publication.
-`PrivateWorker` observes only the original ECS task and pins its token, definition,
+`PrivateWorker` observes only the original ECS task and pins its token and immutable definition revision,
 subnet and private endpoint. Lifecycle IAM must be exact-task and exact-cluster.
 Its `NetworkGone` dependency must use a separate short-lived verifier identity;
 there is deliberately no default using broker credentials. EC2 ENI read permission
 is region-wide metadata access, even when source queries only exact attachment
 IDs. External verifier transport, effective IAM, private broker/controller assembly,
 VPC/endpoint policies and actual Fargate kernel/runtime behavior remain preflight
-gates. No production writer-fence implementation is supplied; cleanup cannot
+gates. A two-minute durable `TransferUntil` claim also survives a lost claim response
+or broker crash. Failed transfers move to `PROCESSING_UNKNOWN`. `Recover` handles
+expired RUNNING claims, unknown processing and interrupted deletion without
+redispatch or settlement. The CAS pins the exact job version and its immutable
+original token/deadline; a recovery transition fences all later publication.
+It stops/verifies the original worker, requires a separate broker/upload writer
+fence, erases both full job prefixes (including orphan results from ambiguous
+PutResult/final-CAS responses), and releases capacity only after fresh absence
+proof. Lost successful publication remains payment-eligible and is not erased as
+a failed unpaid transfer. Unknown writer/storage evidence retains capacity and
+requires bounded repeated recovery/operator attention. The external reaper must
+schedule from durable state; callback-only recovery is insufficient. Runner
+performs the broad read-only definition inspection before dispatch; LifecycleAPI
+contains only exact-task DescribeTasks/StopTask, not DescribeTaskDefinition.
+
+No production writer-fence implementation is supplied; cleanup cannot
 release capacity without an independent proof covering every writer/capability.
 
 A result is conditionally stored as gzip. The adapter streams compressed and

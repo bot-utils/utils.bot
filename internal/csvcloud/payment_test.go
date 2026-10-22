@@ -545,7 +545,7 @@ func startQueued(t *testing.T, r Repository, j Job) Job {
 
 func transferProof(t *testing.T, r Repository, j Job) Job {
 	t.Helper()
-	claimed, e := r.claimTransfer(ctx, j)
+	claimed, e := r.claimTransfer(ctx, j, fixtureTime.Add(2*time.Minute).Unix())
 	if e != nil {
 		t.Fatal(e)
 	}

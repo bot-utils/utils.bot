@@ -90,7 +90,7 @@ strict canonical options, exact byte counts and SHA-256 hashes. The private
 CSV/gzip/counts/hashes, and requires worker stop plus separate network-absence
 verification before storing a payment-eligible result. No customer capability,
 S3 URL, recovery key, payment proof, or AWS credential enters the parser.
-`PrivateWorker` pins the original task, definition hash, subnet and private IP;
+`PrivateWorker` pins the original task, immutable definition revision, subnet and private IP;
 its lifecycle client must use exact-task IAM. Its `NetworkGone` dependency must
 run under a separate short-lived verifier identity; no default implementation
 reuses broker credentials. Cloud wiring, effective IAM, target-kernel behavior,

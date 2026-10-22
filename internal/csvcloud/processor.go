@@ -46,17 +46,19 @@ type ProcessingObjects interface {
 	PutResult(context.Context, Manifest, io.Reader) (Manifest, error)
 }
 type Processor struct {
-	Repo    Repository
-	Objects ProcessingObjects
-	Worker  WorkerSession
-	Gate    Gate
-	Now     func() time.Time
+	Repo          Repository
+	Objects       ProcessingObjects
+	Worker        WorkerSession
+	RecoveryFence WriterFence
+	Eraser        Eraser
+	Gate          Gate
+	Now           func() time.Time
 }
 
 // Process is a private broker operation, not a public endpoint. A conditional
 // claim permits one transfer attempt; uncertain sessions are never replayed.
 // This v1 uses the strict in-memory 8 MiB engine, not the large spill worker.
-func (p Processor) Process(ctx context.Context, id string, q csvwire.Request) error {
+func (p Processor) Process(ctx context.Context, id string, q csvwire.Request) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	if !p.Gate.Enabled {
@@ -78,12 +80,17 @@ func (p Processor) Process(ctx context.Context, id string, q csvwire.Request) er
 			return ErrInvalid
 		}
 	}
-	current, e := p.Repo.claimTransfer(ctx, *j)
+	current, e := p.Repo.claimTransfer(ctx, *j, p.now().Add(2*time.Minute).Unix())
 	if e != nil {
 		return e
 	}
 	stopped := false
 	defer func() {
+		if err != nil {
+			recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			_ = p.noteFailure(recovery, id, current.Dispatch.Token)
+			cancel()
+		}
 		if !stopped {
 			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 			defer cancel()
@@ -121,25 +128,29 @@ func (p Processor) Process(ctx context.Context, id string, q csvwire.Request) er
 	if e != nil {
 		return e
 	}
+	if ctx.Err() != nil || p.now().Unix() >= current.TransferUntil {
+		return ErrUnknown
+	}
 	manifest := Manifest{Object: Object{JobID: id, ID: ID(), Slot: "result", Bytes: m.EncodedBytes, SHA256: m.EncodedSHA256}, LogicalBytes: m.LogicalBytes, LogicalSHA256: m.LogicalSHA256, Rows: int64(m.Rows)}
 	verified, e := p.Objects.PutResult(ctx, manifest, bytes.NewReader(candidate.Bytes()))
 	if e != nil {
 		return e
 	}
-	now := time.Now()
-	if p.Now != nil {
-		now = p.Now()
+	now := p.now()
+	if ctx.Err() != nil || now.Unix() >= current.TransferUntil {
+		return ErrUnknown
 	}
 	_, e = p.Repo.publishResult(ctx, current, verified, now.Add(30*time.Minute).Unix())
 	return e
 }
-func (r Repository) claimTransfer(ctx context.Context, old Job) (Job, error) {
-	if !old.valid() || old.Artifact != "RUNNING" || old.TransferStarted {
+func (r Repository) claimTransfer(ctx context.Context, old Job, until int64) (Job, error) {
+	if !old.valid() || old.Artifact != "RUNNING" || old.TransferStarted || until <= 0 {
 		return old, ErrConflict
 	}
 	n := copyJob(old)
 	n.Version++
 	n.TransferStarted = true
+	n.TransferUntil = until
 	return n, r.advanceVerified(ctx, old, n)
 }
 func (r Repository) transferStopped(ctx context.Context, old Job) (Job, error) {
@@ -181,3 +192,88 @@ func (b *limitedCandidate) Write(p []byte) (int, error) {
 }
 
 func (b *limitedCandidate) Bytes() []byte { return b.buffer.Bytes() }
+
+func (p Processor) now() time.Time {
+	if p.Now != nil {
+		return p.Now()
+	}
+	return time.Now()
+}
+
+// noteFailure is best-effort; a process crash or lost CAS still leaves the
+// durable TransferUntil reservation, which Recover can reconcile after expiry.
+func (p Processor) noteFailure(ctx context.Context, id, token string) error {
+	j, e := p.Repo.Get(ctx, id)
+	if e != nil || j == nil {
+		return ErrUnknown
+	}
+	if j.Artifact != "RUNNING" || !j.TransferStarted || j.Dispatch == nil || j.Dispatch.Token != token {
+		return nil
+	}
+	_, e = p.Repo.processingUnknown(ctx, *j)
+	return e
+}
+func (r Repository) processingUnknown(ctx context.Context, old Job) (Job, error) {
+	if old.Artifact != "RUNNING" || !old.TransferStarted || old.Dispatch == nil {
+		return old, ErrConflict
+	}
+	n := copyJob(old)
+	n.Version++
+	n.Artifact = "PROCESSING_UNKNOWN"
+	n.Dispatch.State = "TRANSFER_UNKNOWN"
+	return n, r.advanceVerified(ctx, old, n)
+}
+
+// Recover is a bounded controller/reaper operation. It never reruns processing,
+// dispatches, quotes or settles. Invoke for expired RUNNING claims as well as
+// PROCESSING_UNKNOWN/DELETING rows, including a lost claim transaction reply.
+// The external reaper must schedule from durable state, not process callbacks.
+func (p Processor) Recover(ctx context.Context, id string) error {
+	if !p.Gate.Enabled {
+		return ErrDisabled
+	}
+	if p.Worker == nil || p.RecoveryFence == nil || p.Eraser == nil {
+		return ErrCleanup
+	}
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	j, e := p.Repo.Get(ctx, id)
+	if e != nil || j == nil {
+		return ErrUnknown
+	}
+	if j.Artifact == "ERASED" {
+		return nil
+	}
+	if !j.TransferStarted || j.Dispatch == nil || j.Financial != "UNPAID" || p.now().Unix() < j.TransferUntil {
+		return ErrConflict
+	}
+	if j.Artifact == "RUNNING" {
+		n, e := p.Repo.processingUnknown(ctx, *j)
+		if e != nil {
+			return e
+		}
+		j = &n
+	}
+	if j.Artifact != "PROCESSING_UNKNOWN" && j.Artifact != "DELETING" {
+		return ErrConflict
+	}
+	if p.Worker.StopAndVerify(ctx, *j.Dispatch) != nil {
+		return ErrCleanup
+	}
+	// This fence additionally covers broker S3 writes already in flight and all
+	// upload capabilities. A timeout alone is never proof of stopped writers.
+	if p.RecoveryFence.VerifyStopped(ctx, *j) != nil {
+		return ErrCleanup
+	}
+	if j.Artifact != "DELETING" {
+		n := copyJob(*j)
+		n.Version++
+		n.Artifact = "DELETING"
+		n.WorkerStopped = true
+		if e = p.Repo.advanceVerified(ctx, *j, n); e != nil {
+			return e
+		}
+	}
+	cleanup := Cleanup{Repo: p.Repo, Writers: p.RecoveryFence, Objects: p.Eraser, Gate: p.Gate}
+	return cleanup.Complete(ctx, id)
+}
