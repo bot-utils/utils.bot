@@ -266,3 +266,177 @@ func TestHTTPMalformedProofAndInputSchema(t *testing.T) {
 		t.Fatal(w.Code)
 	}
 }
+
+func TestHTTPAutomaticGzipClientAndReservationRecovery(t *testing.T) {
+	f := setup(t)
+	a, p := f.prepared()
+	f.e.Pay(context.Background(), a.JobID, a.Capability, p)
+	server := httptest.NewServer(NewHTTP(f.e, true, nil))
+	defer server.Close()
+	attempt := random()
+	req, err := http.NewRequest("GET", server.URL+"/csv/jobs/"+a.JobID+"/result", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Job-Capability", a.Capability)
+	req.Header.Set("Download-Attempt", attempt)
+	response, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil || !response.Uncompressed || string(body) != "id,v\n1,hello\n2,world\n" {
+		t.Fatal("automatic gzip decode failed", err)
+	}
+	h := NewHTTP(f.e, true, nil)
+	w := request(t, h, "GET", "/csv/jobs/"+a.JobID+"/downloads/"+attempt, nil, map[string]string{"X-Job-Capability": a.Capability})
+	if w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	result := decoded[struct {
+		Bytes  int  `json:"reserved_bytes"`
+		Active bool `json:"active"`
+		Replay bool `json:"stream_replay_allowed"`
+	}](t, w)
+	s, _ := f.e.Status(a.JobID, a.Capability)
+	if result.Bytes != s.EncodedBytes || result.Active || result.Replay || s.DownloadRemaining != 2*s.EncodedBytes {
+		t.Fatal("reservation recovery changed budget")
+	}
+}
+
+func TestHTTPPendingUnknownNeverReportsUnpaidOrStartsDownload(t *testing.T) {
+	for _, financial := range []string{"SETTLEMENT_PENDING", "PAYMENT_UNKNOWN"} {
+		t.Run(financial, func(t *testing.T) {
+			f := setup(t)
+			a, p := f.prepared()
+			_ = f.store.tx(true, func(d *database) error {
+				j := d.Jobs[a.JobID]
+				j.Reservation = &reservation{ID: random(), ProofHash: digest([]byte(p)), Started: f.now.Unix(), Outcome: financial}
+				j.Financial = financial
+				j.UnknownAt = f.now.Unix()
+				return nil
+			})
+			var logs bytes.Buffer
+			h := NewHTTP(f.e, true, slog.New(slog.NewJSONHandler(&logs, nil)))
+			headers := map[string]string{"X-Job-Capability": a.Capability, "Download-Attempt": random(), "Range": "bytes=0-9", "Accept-Encoding": "gzip"}
+			for _, suffix := range []string{"result", "result.gz"} {
+				w := request(t, h, "GET", "/csv/jobs/"+a.JobID+"/"+suffix, nil, headers)
+				if w.Code != 409 || strings.Contains(w.Body.String(), "result_unpaid") {
+					t.Fatal("ambiguous payment mislabeled", w.Code, w.Body.String())
+				}
+			}
+			w := request(t, h, "POST", "/csv/jobs/"+a.JobID+"/payment", struct{}{}, headers)
+			if w.Code != 409 {
+				t.Fatal("replacement challenge issued", w.Code)
+			}
+			w = request(t, h, "GET", "/csv/jobs/"+a.JobID, nil, headers)
+			if w.Code != 200 || decoded[Status](t, w).Financial != financial {
+				t.Fatal("status lost financial state")
+			}
+			expected := "payment_unknown"
+			if financial == "SETTLEMENT_PENDING" {
+				expected = "settlement_pending"
+			}
+			if !strings.Contains(logs.String(), `"category":"`+expected+`"`) || strings.Contains(logs.String(), "result_unpaid") {
+				t.Fatal("financial logs mislabeled")
+			}
+			s, _ := f.e.Status(a.JobID, a.Capability)
+			if s.DownloadRemaining != 3*s.EncodedBytes || count(f) != 0 {
+				t.Fatal("unknown started stream or settlement")
+			}
+		})
+	}
+}
+func TestHTTPReconciliationFinancialCategories(t *testing.T) {
+	for _, fault := range []string{"accepted-reply-lost", "rejected-reply-lost", "no-provider-call"} {
+		t.Run(fault, func(t *testing.T) {
+			f := setup(t)
+			a, p := f.prepared()
+			if fault == "no-provider-call" {
+				_ = f.store.tx(true, func(d *database) error {
+					j := d.Jobs[a.JobID]
+					j.Reservation = &reservation{ID: random(), ProofHash: digest([]byte(p)), Started: f.now.Unix(), Outcome: "PAYMENT_UNKNOWN"}
+					j.Financial = "PAYMENT_UNKNOWN"
+					j.UnknownAt = f.now.Unix()
+					return nil
+				})
+			} else {
+				f.provider.Fault = fault
+				f.e.Pay(context.Background(), a.JobID, a.Capability, p)
+			}
+			var logs bytes.Buffer
+			h := NewHTTP(f.e, true, slog.New(slog.NewJSONHandler(&logs, nil)))
+			w := request(t, h, "POST", "/csv/jobs/"+a.JobID+"/reconcile", struct{}{}, map[string]string{"X-Job-Capability": a.Capability})
+			if w.Code != 200 {
+				t.Fatal(w.Code, w.Body.String())
+			}
+			expected := "confirmed_paid"
+			if fault == "rejected-reply-lost" {
+				expected = "definitive_rejection"
+			} else if fault == "no-provider-call" {
+				expected = "payment_unknown"
+			}
+			if !strings.Contains(logs.String(), `"category":"`+expected+`"`) {
+				t.Fatal("reconciliation misclassified", logs.String())
+			}
+		})
+	}
+}
+
+func TestHTTPPaymentSyntaxSignatureAndVerifiedRejectionAreDistinct(t *testing.T) {
+	f := setup(t)
+	a, _ := f.prepared()
+	challenge, err := f.e.PaymentChallenge(a.JobID, a.Capability)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid := Claims{Stage: challenge.Stage, Owner: f.owner, Nonce: random(), Resource: challenge.Resource, Binding: challenge.Binding, Amount: challenge.Amount, Expires: challenge.Expires}
+	for _, name := range []string{"duplicate", "malformed", "signature", "owner", "binding", "expiry"} {
+		t.Run(name, func(t *testing.T) {
+			var logs bytes.Buffer
+			h := NewHTTP(f.e, true, slog.New(slog.NewJSONHandler(&logs, nil)))
+			claim := valid
+			expected := "verified_proof_rejected"
+			proof := ""
+			switch name {
+			case "owner":
+				claim.Owner = random()
+			case "binding":
+				claim.Binding = random()
+			case "expiry":
+				claim.Expires = f.now.Unix() - 1
+			}
+			proof = SignMock(f.key, claim)
+			if name == "malformed" {
+				proof = "malformed-proof"
+				expected = "malformed_proof"
+			}
+			if name == "signature" {
+				p := strings.Split(proof, ".")
+				proof = p[0] + "." + random()
+				expected = "invalid_signature"
+			}
+			if name == "duplicate" {
+				expected = "malformed_proof"
+			}
+			r := httptest.NewRequest("POST", "http://127.0.0.1/csv/jobs/"+a.JobID+"/payment", strings.NewReader("{}"))
+			r.RemoteAddr = "127.0.0.1:2"
+			r.Header.Set("Content-Type", "application/json")
+			r.Header.Set("X-Job-Capability", a.Capability)
+			r.Header.Set("Payment-Signature", proof)
+			if name == "duplicate" {
+				r.Header.Add("Payment-Signature", proof)
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			wantStatus := 402
+			if name == "duplicate" {
+				wantStatus = 400
+			}
+			if w.Code != wantStatus || !strings.Contains(logs.String(), `"category":"`+expected+`"`) || strings.Contains(logs.String(), proof) || count(f) != 0 {
+				t.Fatal("payment outcome misclassified", w.Code, logs.String())
+			}
+		})
+	}
+}

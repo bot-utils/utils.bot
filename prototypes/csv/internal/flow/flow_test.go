@@ -677,3 +677,28 @@ func TestResultWindowAndActiveDownloadFencing(t *testing.T) {
 		t.Fatal(s)
 	}
 }
+
+func TestConcurrentRangesDebitOnlyOneActiveStream(t *testing.T) {
+	f := setup(t)
+	a, p := f.prepared()
+	f.e.Pay(context.Background(), a.JobID, a.Capability, p)
+	var wg sync.WaitGroup
+	var success atomic.Int32
+	start := make(chan struct{})
+	for n := 0; n < 8; n++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			if _, err := f.e.BeginDownload(a.JobID, a.Capability, random(), "bytes=0-9"); err == nil {
+				success.Add(1)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	s, _ := f.e.Status(a.JobID, a.Capability)
+	if success.Load() != 1 || s.DownloadRemaining != 3*s.EncodedBytes-10 {
+		t.Fatal("overlapping stream reservations were not atomic")
+	}
+}

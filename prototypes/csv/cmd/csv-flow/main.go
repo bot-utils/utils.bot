@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -54,6 +55,9 @@ func main() {
 	decoded, decodeErr := hex.DecodeString(key)
 	if err != nil || decodeErr != nil || len(decoded) != 32 || hex.EncodeToString(decoded) != key {
 		log.Fatal("invalid synthetic key")
+	}
+	if !outsideState(*state, *keyFile) {
+		log.Fatal("synthetic mock key must be outside state directory")
 	}
 	store, err := flow.OpenStore(*state)
 	if err != nil {
@@ -102,4 +106,11 @@ func main() {
 	}
 	<-workDone
 	<-serverDone
+}
+
+func outsideState(state, keyFile string) bool {
+	stateReal, stateErr := filepath.EvalSymlinks(state)
+	keyReal, keyErr := filepath.EvalSymlinks(keyFile)
+	relative, err := filepath.Rel(stateReal, keyReal)
+	return stateErr == nil && keyErr == nil && err == nil && (relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)))
 }

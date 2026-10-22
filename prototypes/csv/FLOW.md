@@ -31,6 +31,7 @@ aggregate grouping defaults are explicit in the canonical private binding.
 | `POST /csv/jobs/{id}/reconcile` | Capability and `{}`. Look up that exact reservation; never call settlement again. Unknown outcome grants no result access or replacement proof. |
 | `GET /csv/jobs/{id}/result` | PAID, capability, unique 64-hex `Download-Attempt`, and `Accept-Encoding: gzip`. `text/csv` with gzip HTTP encoding. Exact stored gzip, no ranges on this route. |
 | `GET /csv/jobs/{id}/result.gz` | Same paid capability and attempt requirement. `application/gzip`, no HTTP content encoding, one compressed-byte Range supported. Save/reassemble the complete file before decoding. |
+| `GET /csv/jobs/{id}/downloads/{attempt}` | Capability required; recover reserved byte count and active status after a lost response. Never refunds or authorizes replay of the stream. |
 | `HEAD` / conditional GET | PAID and capability still required. HEAD, 304 and invalid range 416 consume zero download bytes. An If-Range mismatch selects the full immutable artifact. |
 | `POST /csv/jobs/{id}/ack` | Capability, `complete:true`, exact manifest `version` and `encoded_sha256`. This is the client's assertion of verified complete receipt, not server proof of persistence. Starts deletion; a first/partial GET never does. |
 | `DELETE /csv/jobs/{id}` | Capability. Fence work/new writes/streams; relinquish content after worker/stream termination. Does not reverse payment or resolve an unknown outcome. |
@@ -81,7 +82,7 @@ It does not implement the optional second-proof retry from the broader proposal.
   **compressed** artifacts covers both routes and overlapping/repeated ranges.
   Reserve before headers. Failed/partial/ambiguous transfers keep their full debit.
   Reusing an attempt ID returns 409 and never opens a second stream. Status exposes
-  the remaining aggregate allowance; the current client retains attempt receipts.
+  the remaining aggregate allowance; the reservation route recovers each attempt outcome.
 - `control.json` and `control.next` are each capped at 46 MiB. The hard aggregate
   is 96 MiB across every owned state file, including old+next+lock. The state
   directory accepts only those three names. Capacity checks include serialized
@@ -89,6 +90,14 @@ It does not implement the optional second-proof retry from the broader proposal.
   Input parts and results live inside the bounded snapshot, not additional files.
   The Docker parser uses bounded RAM/pipes and read-only/no-host-mount storage;
   Docker's pre-existing image/runtime storage is outside this application budget.
+
+The derivation key is plaintext inside `control.json`, protected only by local
+file permissions and the trusted operator boundary. Snapshot disclosure exposes
+both the key and verifiers/content; this prototype provides no cryptographic
+verifier confidentiality against snapshot disclosure. This key-storage scheme
+must not transfer to production. The client-readable synthetic signing key is a
+different key in an owned 0600 file whose resolved path must be outside the state
+directory; hard-linked key files and final-component symlinks are rejected.
 
 The local store is synthetic plaintext on a trusted operator disk. Atomic logical
 removal from the current snapshot is distinct from physical-media erasure: old
@@ -117,8 +126,9 @@ code never settle. Mock payment outcomes are independently durable, allowing
 accepted-but-reply-lost and crash-before-paid-write tests across restart.
 
 Telemetry includes only fixed route templates/status/category. Admission quote,
-result challenge, malformed proof, definitive rejection, actual provider attempt,
-unknown outcome and confirmed PAID are distinct. No job IDs, payer/nonce, proofs,
+result challenge, malformed/duplicate payment header, invalid signature, verified
+proof rejection (owner/binding/expiry), definitive provider rejection, actual provider attempt,
+pending settlement, unknown outcome and confirmed PAID are distinct. No job IDs, payer/nonce, proofs,
 secrets, options, content, filename or content hash enter logs. Request error
 responses are fixed codes, never parser/provider diagnostics. The executable
 bounds pre-header connections as well as active requests and job resources.
@@ -127,7 +137,9 @@ Representative errors: 409 `binding_conflict`, `admission_nonce_used`,
 `immutable_part_conflict`, `attempt_replayed`; 410 `upload_closed` or
 `result_expired`; 402 `result_unpaid`/`invalid_mock_payment`; 429
 `capacity_unavailable`/`download_budget_exhausted`; 503 `cleanup_uncertain`.
-A payment-unknown status is a financial outcome, never evidence of no charge.
+Pending/unknown result requests return 409 `settlement_pending`/`payment_unknown`,
+never 402 `result_unpaid`. Status and reconciliation telemetry preserve this
+distinction. A payment-unknown status is never evidence of no charge.
 
 ## Run and verify
 

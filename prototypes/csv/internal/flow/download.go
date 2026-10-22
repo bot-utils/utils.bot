@@ -53,8 +53,8 @@ func (e *Engine) InspectResult(id, cap string) (Manifest, error) {
 		if err != nil {
 			return err
 		}
-		if j.Financial != "PAID" {
-			return fail(402, "result_unpaid")
+		if err := requirePaid(j); err != nil {
+			return err
 		}
 		if j.Artifact != "RETRIEVABLE" || e.now() >= j.ResultUntil || j.Cancel {
 			return fail(410, "result_expired")
@@ -77,8 +77,8 @@ func (e *Engine) BeginDownload(id, cap, attempt, rangeHeader string) (Download, 
 		if err != nil {
 			return err
 		}
-		if j.Financial != "PAID" {
-			return fail(402, "result_unpaid")
+		if err := requirePaid(j); err != nil {
+			return err
 		}
 		if j.Artifact != "RETRIEVABLE" || e.now() >= j.ResultUntil || j.Cancel {
 			return fail(410, "result_expired")
@@ -148,4 +148,36 @@ func (e *Engine) EndDownload(id, lease string) error {
 		}
 		return nil
 	})
+}
+
+// DownloadStatus recovers reservation metadata after a lost response, never a
+// second stream or refunded allowance. The attempt ID grants no access itself.
+func (e *Engine) DownloadStatus(id, cap, attempt string) (map[string]any, error) {
+	var out map[string]any
+	err := e.Store.tx(false, func(d *database) error {
+		j, err := auth(d, id, cap)
+		if err != nil {
+			return err
+		}
+		v, exists := j.Downloads[attempt]
+		if !secret(attempt) || !exists {
+			return fail(404, "not_found")
+		}
+		out = map[string]any{"reserved_bytes": v.Bytes, "active": j.ActiveDownload == attempt && v.Until > e.now(), "stream_replay_allowed": false}
+		return nil
+	})
+	return out, err
+}
+
+func requirePaid(j *job) error {
+	switch j.Financial {
+	case "PAID":
+		return nil
+	case "SETTLEMENT_PENDING":
+		return fail(409, "settlement_pending")
+	case "PAYMENT_UNKNOWN":
+		return fail(409, "payment_unknown")
+	default:
+		return fail(402, "result_unpaid")
+	}
 }

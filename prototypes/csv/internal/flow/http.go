@@ -97,11 +97,17 @@ func (s *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if status < 500 {
 			category = "other_4xx"
 		}
-		if code == "invalid_mock_payment" || code == "payment_owner_mismatch" {
+		if code == "invalid_mock_payment" || code == "duplicate_payment_header" {
 			category = "malformed_proof"
 		}
-		if code == "payment_unknown" {
-			category = "payment_unknown"
+		if code == "invalid_mock_signature" {
+			category = "invalid_signature"
+		}
+		if code == "payment_owner_mismatch" || code == "payment_binding_mismatch" || code == "payment_expired" {
+			category = "verified_proof_rejected"
+		}
+		if code == "payment_unknown" || code == "settlement_pending" {
+			category = code
 		}
 		send(w, status, map[string]string{"error": code})
 	}
@@ -127,6 +133,10 @@ func (s *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, name := range []string{"Content-Type", "Content-Encoding", "X-Job-Capability", "Payment-Signature", "Recovery-Secret", "Idempotency-Key", "X-Upload-Grant", "Download-Attempt", "Range", "If-Range", "If-None-Match", "Accept-Encoding"} {
 		if len(r.Header.Values(name)) > 1 {
+			if name == "Payment-Signature" {
+				reject(fail(400, "duplicate_payment_header"))
+				return
+			}
 			reject(fail(400, "duplicate_header"))
 			return
 		}
@@ -253,6 +263,16 @@ func (s *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(p) >= 3 && p[1] == "jobs" {
 		id := p[2]
+		if len(p) == 5 && p[3] == "downloads" && r.Method == "GET" {
+			route = "download_reservation"
+			result, err := s.Engine.DownloadStatus(id, cap, p[4])
+			if err != nil {
+				reject(err)
+				return
+			}
+			ok(result)
+			return
+		}
 		if len(p) == 3 && r.Method == "GET" {
 			route = "job_status"
 			result, err := s.Engine.Status(id, cap)
@@ -261,7 +281,9 @@ func (s *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			w.Header().Set("Retry-After", "1")
-			ok(result)
+			status = 200
+			category = financialCategory(result)
+			send(w, 200, result)
 			return
 		}
 		if len(p) == 3 && r.Method == "DELETE" {
@@ -311,9 +333,9 @@ func (s *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 				status = 200
 				category = "provider_attempt"
-				if result.Financial == "PAYMENT_UNKNOWN" {
+				if result.Financial == "PAYMENT_UNKNOWN" || result.Financial == "SETTLEMENT_PENDING" {
 					status = 202
-					category = "payment_unknown"
+					category = financialCategory(result)
 				} else if result.Financial == "PAID" {
 					category = "confirmed_paid"
 				} else if result.Code == "payment_rejected" {
@@ -333,7 +355,9 @@ func (s *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					reject(err)
 					return
 				}
-				ok(result)
+				status = 200
+				category = financialCategory(result)
+				send(w, 200, result)
 				return
 			case "ack":
 				route = "result_ack"
@@ -442,4 +466,20 @@ func (e *Engine) Acknowledge(id, cap, version, sha string) error {
 		j.deleting()
 		return nil
 	})
+}
+
+func financialCategory(s Status) string {
+	switch s.Financial {
+	case "PAID":
+		return "confirmed_paid"
+	case "PAYMENT_UNKNOWN":
+		return "payment_unknown"
+	case "SETTLEMENT_PENDING":
+		return "settlement_pending"
+	case "UNPAID":
+		if s.Code == "payment_rejected" {
+			return "definitive_rejection"
+		}
+	}
+	return "success"
 }

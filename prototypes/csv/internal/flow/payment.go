@@ -12,7 +12,10 @@ func (e *Engine) PaymentChallenge(id, cap string) (Challenge, error) {
 		if err != nil {
 			return err
 		}
-		if j.Financial == "PAYMENT_UNKNOWN" || j.Financial == "SETTLEMENT_PENDING" {
+		if j.Financial == "SETTLEMENT_PENDING" {
+			return fail(409, "settlement_pending")
+		}
+		if j.Financial == "PAYMENT_UNKNOWN" {
 			return fail(409, "payment_unknown")
 		}
 		if j.Financial == "PAID" {
@@ -82,7 +85,7 @@ func (e *Engine) Pay(ctx context.Context, id, cap, proof string) (Status, error)
 			return nil
 		}
 		if claim.Expires <= e.now() {
-			return fail(402, "invalid_mock_payment")
+			return fail(402, "payment_expired")
 		}
 		if j.Artifact != "RESULT_PREPARED" || j.Financial != "AWAITING_PAYMENT" || j.ResultUntil-e.now() < 300 || j.Cancel || j.paymentBinding() != challenge.Binding {
 			return fail(409, "not_payable")

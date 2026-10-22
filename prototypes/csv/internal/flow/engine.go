@@ -110,7 +110,7 @@ func (e *Engine) Admit(i Intent, proof, idem, recovery string) (Admission, error
 			}
 		} else {
 			if claim.Binding != binding {
-				return fail(402, "invalid_mock_payment")
+				return fail(402, "payment_binding_mismatch")
 			}
 			if claim.Expires <= e.now() {
 				return fail(402, "admission_expired")

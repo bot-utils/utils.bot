@@ -50,22 +50,35 @@ func SignMock(key string, c Claims) string {
 }
 func (m *MockProvider) Verify(proof string, want Challenge, allowExpired bool, now time.Time) (Claims, error) {
 	var c Claims
-	if !secret(m.Key) || len(proof) > 4096 {
+	if !secret(m.Key) {
+		return c, fail(503, "mock_provider_unavailable")
+	}
+	if len(proof) > 4096 {
 		return c, fail(402, "invalid_mock_payment")
 	}
 	parts := strings.Split(proof, ".")
-	if len(parts) != 2 || !same(parts[1], keyed(m.Key, "mock-signature-v1", parts[0])) {
+	if len(parts) != 2 || !secret(parts[1]) {
 		return c, fail(402, "invalid_mock_payment")
 	}
-	raw, e := base64.RawURLEncoding.DecodeString(parts[0])
-	if e != nil || tabular.StrictJSON(raw, &c) != nil || !secret(c.Owner) || !secret(c.Nonce) || c.Stage != want.Stage || c.Resource != want.Resource || !secret(c.Binding) || want.Binding != "" && c.Binding != want.Binding || c.Amount != want.Amount || c.Expires > now.Add(180*time.Second).Unix() || c.Expires <= 0 || !allowExpired && c.Expires <= now.Unix() {
+	if !same(parts[1], keyed(m.Key, "mock-signature-v1", parts[0])) {
+		return c, fail(402, "invalid_mock_signature")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil || tabular.StrictJSON(raw, &c) != nil || !secret(c.Owner) || !secret(c.Nonce) || !secret(c.Binding) {
 		return Claims{}, fail(402, "invalid_mock_payment")
 	}
+	if c.Stage != want.Stage || c.Resource != want.Resource || want.Binding != "" && c.Binding != want.Binding || c.Amount != want.Amount {
+		return Claims{}, fail(402, "payment_binding_mismatch")
+	}
+	if c.Expires > now.Add(180*time.Second).Unix() || c.Expires <= 0 || !allowExpired && c.Expires <= now.Unix() {
+		return Claims{}, fail(402, "payment_expired")
+	}
+
 	return c, nil
 }
 func (m *MockProvider) Settle(_ context.Context, id string, c Claims) (string, error) {
 	outcome := "PAID"
-	if m.Fault == "reject" {
+	if m.Fault == "reject" || m.Fault == "rejected-reply-lost" {
 		outcome = "UNPAID"
 	}
 	e := m.Store.tx(true, func(d *database) error {
@@ -79,7 +92,7 @@ func (m *MockProvider) Settle(_ context.Context, id string, c Claims) (string, e
 	if e != nil {
 		return "", e
 	}
-	if m.Fault == "accepted-reply-lost" {
+	if m.Fault == "accepted-reply-lost" || m.Fault == "rejected-reply-lost" {
 		return "", errors.New("synthetic_reply_lost")
 	}
 	return outcome, nil
