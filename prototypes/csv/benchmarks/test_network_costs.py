@@ -13,7 +13,7 @@ class CostTests(unittest.TestCase):
     def test_all_known_overhead_is_charged(self):
         result = estimate()
         for key in ('three_private_endpoints', 'endpoint_processed_data',
-                    'dns_firewall_queries', 'seven_dns_entries', 'logs_ingestion',
+                    'dns_firewall_queries', 'dns_domain_entries', 'logs_ingestion',
                     'private_image_storage', 's3_requests', 'teardown_and_billing_lag_reserve'):
             self.assertGreater(float(result['cost_usd'][key]), 0)
         self.assertTrue(result['not_a_hard_cap'])

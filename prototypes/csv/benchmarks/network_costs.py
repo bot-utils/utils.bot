@@ -62,7 +62,7 @@ def estimate(jobs_per_tier=1, billable_minutes=20, endpoint_hours=4,
         'three_private_endpoints': network,
         'endpoint_processed_data': n(endpoint_gb) * n(c.rate('AmazonVPC', 'USE2-VpcEndpoint-Bytes')),
         'dns_firewall_queries': n(dns_queries) * c.pinned['dns_million_queries'] / 1000000,
-        'seven_dns_entries': D(7) * c.pinned['dns_domain_month'] * n(storage_hours) / 730,
+        'dns_domain_entries': D(8) * c.pinned['dns_domain_month'] * n(storage_hours) / 730,
         # Standard on-demand ingestion; no free tier or shared allowance.
         'logs_ingestion': n(log_gb) * c.pinned['logs_ingestion'],
         'logs_storage': n(log_gb) * c.pinned['logs_storage'] * n(storage_hours) / 730,
