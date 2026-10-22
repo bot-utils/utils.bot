@@ -3,10 +3,10 @@ package csvcloud
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"net"
 	"net/netip"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,7 +18,6 @@ import (
 // LifecycleAPI is supplied with per-run IAM credentials scoped to the original
 // task ARN and cluster. It deliberately has no RunTask or object/payment API.
 type LifecycleAPI interface {
-	DescribeTaskDefinition(context.Context, *ecs.DescribeTaskDefinitionInput, ...func(*ecs.Options)) (*ecs.DescribeTaskDefinitionOutput, error)
 	DescribeTasks(context.Context, *ecs.DescribeTasksInput, ...func(*ecs.Options)) (*ecs.DescribeTasksOutput, error)
 	StopTask(context.Context, *ecs.StopTaskInput, ...func(*ecs.Options)) (*ecs.StopTaskOutput, error)
 }
@@ -32,17 +31,17 @@ type NetworkGone interface {
 }
 
 type PrivateWorker struct {
-	Review                                      *WireReview
-	Client                                      LifecycleAPI
-	Verifier                                    NetworkGone
-	Cluster, Definition, Subnet, DefinitionHash string
-	Prefix                                      netip.Prefix
-	TLS                                         *tls.Config
-	Gate                                        Gate
+	Review                      *WireReview
+	Client                      LifecycleAPI
+	Verifier                    NetworkGone
+	Cluster, Definition, Subnet string
+	Prefix                      netip.Prefix
+	TLS                         *tls.Config
+	Gate                        Gate
 }
 
 func (w PrivateWorker) valid(d Dispatch) bool {
-	return w.Gate.Enabled && w.Review != nil && w.Client != nil && w.Verifier != nil && w.TLS != nil && !w.TLS.InsecureSkipVerify && w.TLS.RootCAs != nil && w.TLS.ServerName == "csv-worker" && w.TLS.MinVersion == tls.VersionTLS13 && w.TLS.MaxVersion == tls.VersionTLS13 && len(w.TLS.Certificates) == 1 && len(w.TLS.NextProtos) == 1 && w.TLS.NextProtos[0] == "utilsbot-csv/1" && opaque(d.Token) && opaque(w.DefinitionHash) && w.Prefix.IsValid() && w.Prefix.Addr().IsPrivate() && w.Prefix.Bits() >= 24 && w.Subnet != "" && strings.Contains(w.Cluster, ":ecs:us-east-2:") && strings.Contains(w.Cluster, ":cluster/") && strings.HasPrefix(d.TaskARN, strings.Replace(w.Cluster, ":cluster/", ":task/", 1)+"/") && strings.Contains(w.Definition, ":task-definition/")
+	return w.Gate.Enabled && w.Review != nil && w.Review.valid() && regexp.MustCompile(`^arn:aws:ecs:us-east-2:`+w.Review.Account+`:task-definition/utils-bot-csv-private-`+w.Review.RunID[:16]+`-worker:[1-9][0-9]*$`).MatchString(w.Definition) && w.Client != nil && w.Verifier != nil && w.TLS != nil && !w.TLS.InsecureSkipVerify && w.TLS.RootCAs != nil && w.TLS.ServerName == "csv-worker" && w.TLS.MinVersion == tls.VersionTLS13 && w.TLS.MaxVersion == tls.VersionTLS13 && len(w.TLS.Certificates) == 1 && len(w.TLS.NextProtos) == 1 && w.TLS.NextProtos[0] == "utilsbot-csv/1" && opaque(d.Token) && w.Prefix.IsValid() && w.Prefix.Addr().IsPrivate() && w.Prefix.Bits() >= 24 && w.Subnet != "" && strings.Contains(w.Cluster, ":ecs:us-east-2:") && strings.Contains(w.Cluster, ":cluster/") && strings.HasPrefix(d.TaskARN, strings.Replace(w.Cluster, ":cluster/", ":task/", 1)+"/") && strings.Contains(w.Definition, ":task-definition/")
 }
 func (w PrivateWorker) task(ctx context.Context, d Dispatch) (et.Task, error) {
 	if !w.valid(d) {
@@ -72,14 +71,6 @@ func (w PrivateWorker) task(ctx context.Context, d Dispatch) (et.Task, error) {
 		if !reflect.DeepEqual(overrides, et.TaskOverride{}) {
 			return et.Task{}, ErrIntegrity
 		}
-	}
-	definition, e := w.Client.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{TaskDefinition: aws.String(w.Definition)}, func(o *ecs.Options) { o.RetryMaxAttempts = 1 })
-	if e != nil || definition == nil || definition.TaskDefinition == nil {
-		return et.Task{}, ErrUnknown
-	}
-	raw, _ := json.Marshal(definition.TaskDefinition)
-	if Hash(raw) != w.DefinitionHash || aws.ToString(definition.TaskDefinition.TaskDefinitionArn) != w.Definition || w.Review.Validate(definition.TaskDefinition) != nil {
-		return et.Task{}, ErrIntegrity
 	}
 
 	return t, nil

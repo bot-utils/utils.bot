@@ -77,6 +77,7 @@ type Settlement struct {
 	ValidBefore, Started, UnknownAt                                        int64
 }
 type Job struct {
+	TransferUntil                                                                                       int64
 	TransferStarted, WorkerStopped                                                                      bool
 	QuoteCount                                                                                          int
 	DownloadStart, DownloadEnd                                                                          int64
@@ -97,7 +98,7 @@ type Job struct {
 }
 
 func (j Job) valid() bool {
-	if j.WorkerStopped && !j.TransferStarted {
+	if j.TransferStarted != (j.TransferUntil > 0) || j.WorkerStopped && !j.TransferStarted {
 		return false
 	}
 	if j.Settlement != nil && !j.Settlement.valid(j.Financial) {
@@ -166,7 +167,7 @@ func (j Job) valid() bool {
 			return false
 		}
 	case "PROCESSING_UNKNOWN":
-		if j.Dispatch == nil || j.Dispatch.State != "STOPPED_UNVERIFIED" || !opaque(j.Dispatch.Parameters) || j.Dispatch.Started <= 0 || j.Dispatch.TaskARN == "" {
+		if j.Dispatch == nil || (j.Dispatch.State != "STOPPED_UNVERIFIED" && j.Dispatch.State != "TRANSFER_UNKNOWN") || !opaque(j.Dispatch.Parameters) || j.Dispatch.Started <= 0 || j.Dispatch.TaskARN == "" {
 			return false
 		}
 	}
@@ -197,7 +198,7 @@ type DownloadPermit struct {
 
 // validReplacement preserves identities after their one durable reservation.
 func validReplacement(a, b Job) bool {
-	if a.TransferStarted && !b.TransferStarted || a.WorkerStopped && !b.WorkerStopped || a.Remedy && !b.Remedy || !a.valid() || !b.valid() || !sameJob(a, b) || b.Version != a.Version+1 || b.DownloadUsed < a.DownloadUsed || b.QuoteCount < a.QuoteCount {
+	if a.TransferUntil != 0 && a.TransferUntil != b.TransferUntil || a.TransferStarted && !b.TransferStarted || a.WorkerStopped && !b.WorkerStopped || a.Remedy && !b.Remedy || !a.valid() || !b.valid() || !sameJob(a, b) || b.Version != a.Version+1 || b.DownloadUsed < a.DownloadUsed || b.QuoteCount < a.QuoteCount {
 		return false
 	}
 	allowed := map[string]map[string]bool{"UNPAID": {"UNPAID": true, "AWAITING_PAYMENT": true}, "AWAITING_PAYMENT": {"AWAITING_PAYMENT": true, "SETTLEMENT_PENDING": true}, "SETTLEMENT_PENDING": {"SETTLEMENT_PENDING": true, "PAYMENT_UNKNOWN": true}, "PAYMENT_UNKNOWN": {"PAYMENT_UNKNOWN": true, "PAID": true, "UNPAID": true}, "PAID": {"PAID": true}}

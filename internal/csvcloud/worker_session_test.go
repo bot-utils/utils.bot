@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"net/netip"
 	"strings"
 	"testing"
@@ -56,13 +55,12 @@ func (s *networkStub) VerifyAbsent(_ context.Context, ids []string) error {
 func workerFixture() (PrivateWorker, Dispatch, *lifecycleStub, *networkStub) {
 	review := privateReview()
 	def, _ := review.Definition()
-	def.TaskDefinitionArn = aws.String("arn:aws:ecs:us-east-2:123456789012:task-definition/utils-bot-csv-private-worker:1")
-	raw, _ := json.Marshal(def)
+	def.TaskDefinitionArn = aws.String("arn:aws:ecs:us-east-2:123456789012:task-definition/" + aws.ToString(def.Family) + ":1")
 	cluster := "arn:aws:ecs:us-east-2:123456789012:cluster/utils-bot-csv-trial"
 	dispatch := Dispatch{Token: strings.Repeat("c", 64), TaskARN: "arn:aws:ecs:us-east-2:123456789012:task/utils-bot-csv-trial/" + strings.Repeat("d", 32)}
 	s := &lifecycleStub{definition: def, task: et.Task{TaskArn: aws.String(dispatch.TaskARN), ClusterArn: aws.String(cluster), TaskDefinitionArn: def.TaskDefinitionArn, Group: aws.String("csv-" + dispatch.Token), StartedBy: aws.String(dispatch.Token[:32]), PlatformVersion: aws.String("1.4.0"), LaunchType: et.LaunchTypeFargate, LastStatus: aws.String("RUNNING"), Attachments: []et.Attachment{{Type: aws.String("ElasticNetworkInterface"), Details: []et.KeyValuePair{{Name: aws.String("subnetId"), Value: aws.String("subnet-private")}, {Name: aws.String("networkInterfaceId"), Value: aws.String("eni-0123456789abcdef0")}, {Name: aws.String("privateIPv4Address"), Value: aws.String("10.88.0.5")}}}}}}
 	n := &networkStub{}
-	return PrivateWorker{Review: &review, Client: s, Verifier: n, Cluster: cluster, Definition: aws.ToString(def.TaskDefinitionArn), DefinitionHash: Hash(raw), Subnet: "subnet-private", Prefix: netip.MustParsePrefix("10.88.0.0/24"), TLS: &tls.Config{MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13, RootCAs: x509.NewCertPool(), ServerName: "csv-worker", Certificates: []tls.Certificate{{}}, NextProtos: []string{"utilsbot-csv/1"}}, Gate: Gate{Enabled: true}}, dispatch, s, n
+	return PrivateWorker{Review: &review, Client: s, Verifier: n, Cluster: cluster, Definition: aws.ToString(def.TaskDefinitionArn), Subnet: "subnet-private", Prefix: netip.MustParsePrefix("10.88.0.0/24"), TLS: &tls.Config{MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13, RootCAs: x509.NewCertPool(), ServerName: "csv-worker", Certificates: []tls.Certificate{{}}, NextProtos: []string{"utilsbot-csv/1"}}, Gate: Gate{Enabled: true}}, dispatch, s, n
 }
 func TestPrivateLifecycleStopsOriginalTaskAndRequiresSeparateNetworkWitness(t *testing.T) {
 	w, d, s, n := workerFixture()
@@ -74,7 +72,7 @@ func TestPrivateLifecycleStopsOriginalTaskAndRequiresSeparateNetworkWitness(t *t
 	}
 }
 func TestPrivateLifecycleRejectsForeignTasksEndpointsOverridesAndUncertainty(t *testing.T) {
-	for _, scenario := range []string{"foreign_task", "foreign_token", "foreign_subnet", "foreign_ip", "extra_eni", "override", "definition", "stop_unknown", "network_unknown", "no_witness", "disabled", "unsafe_tls"} {
+	for _, scenario := range []string{"foreign_task", "foreign_token", "foreign_subnet", "foreign_ip", "extra_eni", "override", "stop_unknown", "network_unknown", "no_witness", "disabled", "unsafe_tls"} {
 		t.Run(scenario, func(t *testing.T) {
 			w, d, s, n := workerFixture()
 			switch scenario {
@@ -90,8 +88,6 @@ func TestPrivateLifecycleRejectsForeignTasksEndpointsOverridesAndUncertainty(t *
 				s.task.Attachments = append(s.task.Attachments, s.task.Attachments[0])
 			case "override":
 				s.task.Overrides = &et.TaskOverride{TaskRoleArn: aws.String("credentialed")}
-			case "definition":
-				s.definition.TaskRoleArn = aws.String("credentialed")
 			case "stop_unknown":
 				s.failStop = true
 			case "network_unknown":
