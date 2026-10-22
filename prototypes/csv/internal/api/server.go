@@ -91,6 +91,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		operation = "dedupe"
 	case "/csv/join":
 		operation = "join"
+	case "/csv/transform":
+		operation = "transform"
 	case "/csv/aggregate":
 		operation = "aggregate"
 	default:
