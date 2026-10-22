@@ -177,7 +177,7 @@ is a local agent-like client proof, not evidence that a particular restricted
 customer environment can upload, persist secrets, pay and resume.
 
 Unwired AWS storage/queue/compute adapters and real-signature payment coordination
-are now available as source, described in [AWS.md](AWS.md). Production transfer
+are now available as source, listed in the [source review guide](../../SOURCE.md#unreleased-csv-source). Production transfer
 isolation, controller wiring, cloud validation, retention/remedy policy, measured
 retry-inclusive pricing, monitoring, intended-client validation and owner launch
 approval remain gates.
