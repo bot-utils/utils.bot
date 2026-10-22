@@ -56,13 +56,8 @@ func (a Artifacts) PublishResult(ctx context.Context, id, dispatchToken string, 
 	if e != nil {
 		return e
 	}
-	n := copyJob(*j)
-	n.Version++
-	n.Artifact = "RESULT_PREPARED"
-	n.Financial = "AWAITING_PAYMENT"
-	n.Result = &verified
-	n.ResultUntil = until
-	return a.Repo.Replace(ctx, *j, n)
+	_, e = a.Repo.publishResult(ctx, *j, verified, until)
+	return e
 }
 
 func (a Artifacts) now() int64 {

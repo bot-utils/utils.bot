@@ -42,7 +42,11 @@ unknown. A lost complete response requires inspecting the original object, never
 a blind completion retry. Stale events cannot manufacture verified input state. Explicit artifact and
 financial transition maps reject skipped states. Input identities, byte counts
 and hashes remain frozen; only upload-acceptance ETags may advance. Settlement
-states are closed enums consistent with the financial state.
+states are closed enums consistent with the financial state. Generic database
+replacement cannot change financial state or settlement evidence. Dedicated
+package-private operations publish prepared results, reserve attempts and record
+uncertainty; the resolution operation calls the trusted chain reader itself and
+requires a transaction hash for PAID.
 
 The queue transaction commits the job, a single-use outbox and a cumulative cost
 reservation. Duplicate sends/receives cannot create a second automatic ECS start.

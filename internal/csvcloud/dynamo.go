@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"pdfservice/internal/jsonwire"
+	"reflect"
 	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -106,7 +107,7 @@ func (r Repository) Create(ctx context.Context, j Job, maximum int64) error {
 	return err
 }
 func (r Repository) Replace(ctx context.Context, old, next Job) error {
-	if !validReplacement(old, next) || old.Settlement == nil && next.Settlement != nil || old.Dispatch == nil && next.Dispatch != nil {
+	if !validReplacement(old, next) || old.Financial != next.Financial || !reflect.DeepEqual(old.Settlement, next.Settlement) || old.Settlement == nil && next.Settlement != nil || old.Dispatch == nil && next.Dispatch != nil {
 		return ErrInvalid
 	}
 	return r.txn(ctx, []d.TransactWriteItem{r.versioned(old, next)})
