@@ -21,7 +21,8 @@ def baseline():
         return row
     policies = {
         's3': [statement(['s3:GetObject'], ['arn:aws:s3:::prod-us-east-2-starport-layer-bucket/*']),
-               statement(['s3:GetObject'], ['arn:aws:s3:::utils-bot-csv-trial-' + ACCOUNT + '-us-east-2/trial/code/*'], role('glue'))],
+               statement(['s3:GetObject'], ['arn:aws:s3:::utils-bot-csv-trial-' + ACCOUNT + '-us-east-2/trial/code/*'], role('glue')),
+               statement(['s3:GetBucketLocation'], ['arn:aws:s3:::utils-bot-csv-trial-' + ACCOUNT + '-us-east-2'], role('glue'))],
         'ecr': [statement(['ecr:GetAuthorizationToken'], ['*'], role('ecs-execution')),
                 statement(['ecr:BatchCheckLayerAvailability', 'ecr:GetDownloadUrlForLayer', 'ecr:BatchGetImage'],
                           ['arn:aws:ecr:us-east-2:' + ACCOUNT + ':repository/utils-bot-csv-trial'], role('ecs-execution'))],
@@ -76,6 +77,14 @@ def baseline():
 class AdmissionTests(unittest.TestCase):
     def test_private_exact_binding_is_accepted(self):
         self.assertEqual(network_failures(baseline(), EXPECTED), [])
+
+    def test_bucket_metadata_permission_cannot_read_other_buckets_or_objects(self):
+        for action, resource in [('s3:GetObject', 'arn:aws:s3:::*'),
+                                 ('s3:GetBucketLocation', 'arn:aws:s3:::*')]:
+            row = baseline()
+            metadata = row['endpoints'][0]['PolicyDocument']['Statement'][2]
+            metadata.update(Action=[action], Resource=[resource])
+            self.assertIn('endpoint_policy_not_reviewed', network_failures(row, EXPECTED))
 
     def test_dns_root_dot_matches_the_same_exact_name_only(self):
         row = baseline()

@@ -69,6 +69,8 @@ func csvTrialNetworkStack(app awscdk.App, account, az, s3PrefixList string, paid
 		Resources: jsii.Strings("arn:aws:s3:::prod-us-east-2-starport-layer-bucket/*"),
 	}))
 	s3.AddToPolicy(trialEndpointStatement(glueRole, []string{"s3:GetObject"}, []string{"arn:aws:s3:::" + bucket + "/trial/code/*"}))
+	// Match the bounded role metadata permission used by regional S3 clients.
+	s3.AddToPolicy(trialEndpointStatement(glueRole, []string{"s3:GetBucketLocation"}, []string{"arn:aws:s3:::" + bucket}))
 
 	services := []struct {
 		id      string

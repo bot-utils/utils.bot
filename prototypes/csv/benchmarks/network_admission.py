@@ -21,6 +21,7 @@ def endpoint_policy_ok(document, kind, account):
         expected = [
             ({'s3:GetObject'}, {'arn:aws:s3:::prod-us-east-2-starport-layer-bucket/*'}, None),
             ({'s3:GetObject'}, {'arn:aws:s3:::' + bucket + '/trial/code/*'}, glue),
+            ({'s3:GetBucketLocation'}, {'arn:aws:s3:::' + bucket}, glue),
         ]
     elif kind in ('ecr.api', 'ecr.dkr'):
         expected = [

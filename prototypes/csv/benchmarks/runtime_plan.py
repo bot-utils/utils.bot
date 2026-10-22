@@ -60,7 +60,7 @@ def build(account, subnet, glue_group, fargate_group, code_sha256, arm_digest, x
             'DefaultArguments': {'--library-set': 'none',
                                  '--extra-py-files': code + 'utils_bot_csv_trial-0.1.0-py3-none-any.whl'},
             'MaxCapacity': dpu, 'Timeout': 15, 'MaxRetries': 0,
-            'ExecutionProperty': {'MaxConcurrentRuns': 1}, 'Tags': TAGS,
+            'ExecutionProperty': {'MaxConcurrentRuns': 1},
         })
     return {
         'schema_version': 1, 'synthetic_only': True, 'max_jobs': 6, 'max_concurrency': 1,
@@ -81,7 +81,7 @@ def build(account, subnet, glue_group, fargate_group, code_sha256, arm_digest, x
         'logs': {'retention_days_for_new_groups': 7,
                  'existing_group_settings': 'preserve', 'names': ['/utils-bot/csv-trial',
                  '/aws-glue/python-jobs/output', '/aws-glue/python-jobs/error']},
-        'glue_connection': {'Name': NAME, 'ConnectionType': 'NETWORK',
+        'glue_connection': {'Name': NAME, 'ConnectionType': 'NETWORK', 'ConnectionProperties': {},
             'PhysicalConnectionRequirements': {'SubnetId': subnet,
                 'SecurityGroupIdList': [glue_group], 'AvailabilityZone': 'us-east-2a'}},
         'glue_jobs': jobs, 'task_definitions': definitions,
