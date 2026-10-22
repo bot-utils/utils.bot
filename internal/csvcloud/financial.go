@@ -15,7 +15,7 @@ func (r Repository) publishResult(ctx context.Context, old Job, m Manifest, unti
 	if !r.Gate.Enabled {
 		return old, ErrDisabled
 	}
-	if !old.valid() || old.Artifact != "RUNNING" || old.Financial != "UNPAID" || old.Dispatch == nil || old.Dispatch.State != "ACTIVE" || old.Result != nil || !m.Valid() || m.Object.JobID != old.ID {
+	if !old.valid() || old.Artifact != "RUNNING" || !old.TransferStarted || !old.WorkerStopped || old.Financial != "UNPAID" || old.Dispatch == nil || old.Dispatch.State != "ACTIVE" || old.Result != nil || !m.Valid() || m.Object.JobID != old.ID {
 		return old, ErrConflict
 	}
 	n := copyJob(old)

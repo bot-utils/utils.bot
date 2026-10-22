@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"utils.bot/csvprototype/internal/tabular"
+	"pdfservice/internal/csvtabular"
 )
 
 type HTTP struct {

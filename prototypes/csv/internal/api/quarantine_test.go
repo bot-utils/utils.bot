@@ -3,8 +3,8 @@ package api
 import (
 	"context"
 	"net/http/httptest"
+	"pdfservice/internal/csvtabular"
 	"testing"
-	"utils.bot/csvprototype/internal/tabular"
 )
 
 func TestCleanupFailureQuarantinesFurtherWorkAndHealth(t *testing.T) {

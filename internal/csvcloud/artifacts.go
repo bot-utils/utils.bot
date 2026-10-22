@@ -49,7 +49,7 @@ func (a Artifacts) PublishResult(ctx context.Context, id, dispatchToken string, 
 	if e != nil || j == nil {
 		return ErrConflict
 	}
-	if j.Artifact != "RUNNING" || j.Dispatch == nil || j.Dispatch.Token != dispatchToken || j.Dispatch.State != "ACTIVE" || j.Result != nil || !m.Valid() || m.Object.JobID != id || until <= a.now() || until > a.now()+1800 {
+	if j.Artifact != "RUNNING" || !j.TransferStarted || !j.WorkerStopped || j.Dispatch == nil || j.Dispatch.Token != dispatchToken || j.Dispatch.State != "ACTIVE" || j.Result != nil || !m.Valid() || m.Object.JobID != id || until <= a.now() || until > a.now()+1800 {
 		return ErrConflict
 	}
 	verified, e := a.Results.VerifyResult(ctx, m)

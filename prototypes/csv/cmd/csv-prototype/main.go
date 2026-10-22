@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	"utils.bot/csvprototype/internal/api"
-	"utils.bot/csvprototype/internal/tabular"
+	"pdfservice/internal/csvtabular"
+	"pdfservice/prototypes/csv/internal/api"
 )
 
 func main() {

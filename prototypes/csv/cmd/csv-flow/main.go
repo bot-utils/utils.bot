@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"time"
 
-	"utils.bot/csvprototype/internal/api"
-	"utils.bot/csvprototype/internal/flow"
+	"pdfservice/prototypes/csv/internal/api"
+	"pdfservice/prototypes/csv/internal/flow"
 )
 
 func main() {

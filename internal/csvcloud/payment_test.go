@@ -372,6 +372,7 @@ func prepareSeeded(t *testing.T, r Repository, j Job, m Manifest) Job {
 		t.Fatal(e)
 	}
 	running := startQueued(t, r, q)
+	running = transferProof(t, r, running)
 	if e = a.PublishResult(ctx, j.ID, running.Dispatch.Token, m, fixtureTime.Unix()+1800); e != nil {
 		t.Fatal(e)
 	}
@@ -540,4 +541,17 @@ func startQueued(t *testing.T, r Repository, j Job) Job {
 		t.Fatal(e)
 	}
 	return readJob(t, r, j.ID)
+}
+
+func transferProof(t *testing.T, r Repository, j Job) Job {
+	t.Helper()
+	claimed, e := r.claimTransfer(ctx, j)
+	if e != nil {
+		t.Fatal(e)
+	}
+	stopped, e := r.transferStopped(ctx, claimed)
+	if e != nil {
+		t.Fatal(e)
+	}
+	return stopped
 }

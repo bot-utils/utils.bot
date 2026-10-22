@@ -59,13 +59,37 @@ original tasks. At or beyond 24 hours it requires operator reconciliation, with
 no replacement token or automatic redrive. The cost reservation is a conservative
 cumulative budget debit, not a refundable active-slot counter.
 
-Dispatch pins the full reviewed task-definition hash and checks a non-root,
-read-only, credential-free parser profile with dropped capabilities, no public IP,
-no secrets, ports or container logging. This is a baseline check, not evidence of
-network isolation. The actual credential-free transfer protocol, writable scratch
-layout, immutable production image, task stop/timeout enforcement and VPC/endpoint
-policy still require implementation and review. No production writer-fence
-implementation is supplied; cleanup cannot release capacity without one.
+Dispatch pins the full reviewed task-definition hash and a non-root, read-only
+credential-free parser profile with dropped capabilities and no public IP.
+The default single-container profile rejects secrets, ports and logging. A
+separate explicit synthetic-only `WireReview` permits exactly three containers:
+CHOWN-only FIFO init, UID 65532 TLS transport, and UID 65533 parser. Only the
+transport receives one exact per-run SSM TLS identity reference. Task role and
+shared PID mode remain absent; no extra containers, ports, environment, mounts,
+capabilities, image digests or logging sinks are accepted. Fargate's default
+20 GiB allocation is retained without requesting expanded ephemeral storage.
+
+The private wire protocol carries strict operation/options and immutable bounded
+bytes, never job capabilities, source URLs, payment proofs or AWS credentials.
+The parser installs `seccomp-no-paths-v1` process-wide before its ready marker and
+input, verifies existing/new thread restrictions, and admits only exact Go runtime
+clone flags. This in-memory profile handles all four operations at 8 MiB per file
+and 8 MiB CSV/gzip output. It does not provide the later spill-to-disk worker.
+The local opt-in ARM64 Docker test exercises the actual init/FIFO/parser/transport
+path and per-job TLS authentication, including shared sibling networking.
+
+`Processor` durably claims one transfer attempt, reads immutable S3 inputs,
+independently verifies complete gzip/CSV/hash/count evidence, and requires worker
+stop plus separate ENI-absence verification before result publication.
+`PrivateWorker` observes only the original ECS task and pins its token, definition,
+subnet and private endpoint. Lifecycle IAM must be exact-task and exact-cluster.
+Its `NetworkGone` dependency must use a separate short-lived verifier identity;
+there is deliberately no default using broker credentials. EC2 ENI read permission
+is region-wide metadata access, even when source queries only exact attachment
+IDs. External verifier transport, effective IAM, private broker/controller assembly,
+VPC/endpoint policies and actual Fargate kernel/runtime behavior remain preflight
+gates. No production writer-fence implementation is supplied; cleanup cannot
+release capacity without an independent proof covering every writer/capability.
 
 A result is conditionally stored as gzip. The adapter streams compressed and
 logical bytes, checks both byte counts and SHA-256 domains, validates gzip/CRC and

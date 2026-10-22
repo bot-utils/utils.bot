@@ -71,6 +71,40 @@ Persistent jobs, upload recovery, payment ambiguity, gzip/range downloads and
 acknowledgement can be exercised without enabling any public CSV route. It is
 separate from the 1 GiB streaming validation and is not the AWS transfer backend.
 
+## Private AWS transfer source (unlaunched)
+
+The root `internal/csvtabular` engine and `internal/csvguard` package are shared
+with the prototype. `cmd/csv-private-worker` provides a static ARM64 worker with
+three explicit modes: a CHOWN-only FIFO initializer, an unprivileged TLS
+transport, and a different-UID parser with no credentials or secrets. The exact
+synthetic task profile has no task role, no shared PID namespace, no log sink,
+readonly roots, and only one per-run TLS secret on the transport. The parser
+installs `seccomp-no-paths-v1` across existing and new Go threads before input;
+unknown syscalls, paths, sockets, processes, and foreign descriptor access fail.
+It handles all four operations in memory with 8 MiB per input and gzip output.
+This profile does not support the future large spill-to-disk worker.
+
+`internal/csvwire` specifies a single-use TLS 1.3 authenticated byte exchange,
+strict canonical options, exact byte counts and SHA-256 hashes. The private
+`csvcloud.Processor` claims one durable transfer attempt, independently checks
+CSV/gzip/counts/hashes, and requires worker stop plus separate network-absence
+verification before storing a payment-eligible result. No customer capability,
+S3 URL, recovery key, payment proof, or AWS credential enters the parser.
+`PrivateWorker` pins the original task, definition hash, subnet and private IP;
+its lifecycle client must use exact-task IAM. Its `NetworkGone` dependency must
+run under a separate short-lived verifier identity; no default implementation
+reuses broker credentials. Cloud wiring, effective IAM, target-kernel behavior,
+and the bounded synthetic AWS attempt remain preflight requirements. The source
+has no public handler or deployment hook, and payment settlement stays gated off.
+
+The opt-in `TestPrivateDockerContainers` uses a pinned local image ID and Unix
+Docker socket, four synthetic fixtures, separate PID namespaces and a
+localhost-only published TLS port. Parser and transport share the same network
+namespace, so the parser probes exercise the syscall boundary despite sibling
+network access. Each fixture verifies output and successful handler exits, then
+independently checks removal of its labelled containers, volume and network.
+These local tests do not prove Fargate networking, IAM or kernel compatibility.
+
 ## POST /csv/dedupe
 
 Parts: `options`, `file`.
@@ -192,7 +226,7 @@ apply. Transform does not make hostile text safe for a model or spreadsheet.
 
 ## Streaming transform validation
 
-`internal/tabular/stream_transform.go` processes one record at a time and shares
+`../../internal/csvtabular/stream_transform.go` processes one record at a time and shares
 compiled options and cell transformations with the request-sized implementation.
 It bounds raw fields/records before the CSV decoder allocates them. Input, rows,
 logical output and encoded output have independent limits; callers must use
@@ -292,7 +326,7 @@ python3 scripts/demo.py
 go test -race ./...
 go vet ./...
 CSV_DOCKER_TESTS=1 go test -race ./internal/api -run Docker -v
-go test ./internal/tabular -run '^$' -bench . -benchtime=3x -benchmem
+go test pdfservice/internal/csvtabular -run '^$' -bench . -benchtime=3x -benchmem
 ```
 
 The build uses a minimal context containing only the compiled worker and Dockerfile.

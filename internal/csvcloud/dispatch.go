@@ -85,6 +85,7 @@ type ECSAPI interface {
 	DescribeTasks(context.Context, *ecs.DescribeTasksInput, ...func(*ecs.Options)) (*ecs.DescribeTasksOutput, error)
 }
 type Runner struct {
+	Wire                                                                   *WireReview
 	Client                                                                 ECSAPI
 	Repo                                                                   Repository
 	Gate                                                                   Gate
@@ -99,7 +100,11 @@ func (r Runner) now() int64 {
 	return time.Now().Unix()
 }
 func (r Runner) request(j Job) *ecs.RunTaskInput {
-	return &ecs.RunTaskInput{Cluster: aws.String(r.Cluster), TaskDefinition: aws.String(r.Definition), ClientToken: aws.String(j.Dispatch.Token), StartedBy: aws.String(j.Dispatch.Token[:32]), Group: aws.String("csv-" + j.Dispatch.Token), Count: aws.Int32(1), LaunchType: et.LaunchTypeFargate, PlatformVersion: aws.String("1.4.0"), NetworkConfiguration: &et.NetworkConfiguration{AwsvpcConfiguration: &et.AwsVpcConfiguration{Subnets: []string{r.Subnet}, SecurityGroups: []string{r.SecurityGroup}, AssignPublicIp: et.AssignPublicIpDisabled}}, Overrides: &et.TaskOverride{ContainerOverrides: []et.ContainerOverride{{Name: aws.String(r.Container), Command: []string{"--job", j.ID, "--dispatch", j.Dispatch.Token}}}}}
+	request := &ecs.RunTaskInput{Cluster: aws.String(r.Cluster), TaskDefinition: aws.String(r.Definition), ClientToken: aws.String(j.Dispatch.Token), StartedBy: aws.String(j.Dispatch.Token[:32]), Group: aws.String("csv-" + j.Dispatch.Token), Count: aws.Int32(1), LaunchType: et.LaunchTypeFargate, PlatformVersion: aws.String("1.4.0"), NetworkConfiguration: &et.NetworkConfiguration{AwsvpcConfiguration: &et.AwsVpcConfiguration{Subnets: []string{r.Subnet}, SecurityGroups: []string{r.SecurityGroup}, AssignPublicIp: et.AssignPublicIpDisabled}}, Overrides: &et.TaskOverride{ContainerOverrides: []et.ContainerOverride{{Name: aws.String(r.Container), Command: []string{"--job", j.ID, "--dispatch", j.Dispatch.Token}}}}}
+	if r.Wire != nil {
+		request.Overrides = nil
+	}
+	return request
 }
 
 // Start only consumes a durable cost reservation. There is one automatic RunTask
@@ -222,6 +227,12 @@ func (r Runner) inspectDefinition(ctx context.Context) error {
 	}
 	d := out.TaskDefinition
 	raw, _ := json.Marshal(d)
+	if r.Wire != nil {
+		if r.Container != "transport" || Hash(raw) != r.IsolationReview || aws.ToString(d.TaskDefinitionArn) != r.Definition {
+			return ErrInvalid
+		}
+		return r.Wire.Validate(d)
+	}
 	if Hash(raw) != r.IsolationReview || aws.ToString(d.TaskDefinitionArn) != r.Definition || aws.ToString(d.TaskRoleArn) != "" || aws.ToString(d.Cpu) != "1024" || aws.ToString(d.Memory) != "2048" || d.NetworkMode != et.NetworkModeAwsvpc || d.RuntimePlatform == nil || d.RuntimePlatform.CpuArchitecture != et.CPUArchitectureArm64 || d.RuntimePlatform.OperatingSystemFamily != et.OSFamilyLinux || len(d.ContainerDefinitions) != 1 || len(d.Volumes) != 0 {
 		return ErrInvalid
 	}
