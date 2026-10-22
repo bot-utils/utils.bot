@@ -29,7 +29,9 @@ var ctx = context.Background()
 var fixtureTime = time.Unix(1800000000, 0)
 
 func fixtureJob() Job {
-	return Job{ID: ID(), IntentBinding: ID(), Owner: "0x1111111111111111111111111111111111111111", AdmissionNonceHash: ID(), IdempotencyHash: ID(), RecoveryVerifier: ID(), CapabilityVerifier: ID(), Version: 1, Artifact: "UPLOAD_INCOMPLETE", Financial: "UNPAID", UploadUntil: fixtureTime.Unix() + 300}
+	j := Job{ID: ID(), IntentBinding: ID(), Owner: "0x1111111111111111111111111111111111111111", AdmissionNonceHash: ID(), IdempotencyHash: ID(), RecoveryVerifier: ID(), CapabilityVerifier: ID(), Version: 1, Artifact: "UPLOAD_INCOMPLETE", Financial: "UNPAID", UploadUntil: fixtureTime.Unix() + 300}
+	j.Inputs = []Object{{JobID: j.ID, ID: ID(), Slot: "file", Bytes: 8, SHA256: ID()}}
+	return j
 }
 
 // This fake supplies atomic provider transactions and lost replies; production
@@ -174,6 +176,8 @@ func TestDynamoAtomicIdentitiesCASAndLostReply(t *testing.T) {
 	next := j
 	next.Version++
 	next.Artifact = "UPLOAD_VERIFIED"
+	next.Inputs = append([]Object(nil), j.Inputs...)
+	next.Inputs[0].ETag = `"verified"`
 	if e := r.Replace(ctx, j, next); e != nil {
 		t.Fatal(e)
 	}
@@ -378,6 +382,8 @@ func queued(t *testing.T) (Repository, Job) {
 	n := j
 	n.Version++
 	n.Artifact = "UPLOAD_VERIFIED"
+	n.Inputs = append([]Object(nil), j.Inputs...)
+	n.Inputs[0].ETag = `"verified"`
 	if e := r.Replace(ctx, j, n); e != nil {
 		t.Fatal(e)
 	}
@@ -473,6 +479,7 @@ func TestDownloadReservationCASAndImmutableManifest(t *testing.T) {
 	n.Result = &m
 	n.Artifact = "RETRIEVABLE"
 	n.Financial = "PAID"
+	n.Settlement = &Settlement{ID: ID(), Nonce: "0x" + ID(), Payer: n.Owner, Receiver: "0x2222222222222222222222222222222222222222", Asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", Network: "eip155:8453", Amount: "12345", State: "PAID", Started: fixtureTime.Unix(), ValidBefore: fixtureTime.Unix() + 180}
 	n.ResultUntil = fixtureTime.Unix() + 600
 	// Preexisting finalized state is a provider fixture, not a transition that
 	// callers may manufacture with generic Replace.
@@ -671,14 +678,14 @@ func TestCapacityFreedExactlyOnceAfterCleanup(t *testing.T) {
 	}
 	seed(t, r, fixtureJob())
 }
-func TestFixedEventsDoNotCountQuotesAsPaymentFailures(t *testing.T) {
-	if InitialQuote.FailedPayment() || Requote.FailedPayment() || PaymentUnknown.FailedPayment() {
-		t.Fatal("quote/pending counted as failed payment")
-	}
-	for _, e := range []Event{MalformedPayment, PaymentRejected, ProviderVerifyFailure, ProviderSettleFailure} {
-		if !e.FailedPayment() {
-			t.Fatal(e)
+func TestFixedEventsDistinguishRejectionFromUncertainty(t *testing.T) {
+	for _, e := range []Event{InitialQuote, Requote, MalformedPayment, PaymentUnknown, ProviderVerifyFailure, ProviderSettleFailure} {
+		if e.PayerRejected() || e.Record().PayerRejected {
+			t.Fatal("uncertain/unsigned event counted as payer rejection", e)
 		}
+	}
+	if !PaymentRejected.PayerRejected() {
+		t.Fatal("explicit rejection missing")
 	}
 	if Event(255).Name() != "unknown" {
 		t.Fatal("free-form event")
@@ -741,11 +748,20 @@ func TestArtifactsRequireVerifiedUploadsAndMatchingWorker(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	running := copyJob(queued)
+	reserved := copyJob(queued)
+	reserved.Version++
+	reserved.Artifact = "DISPATCH_RESERVED"
+	reserved.Dispatch.State = "STARTING"
+	reserved.Dispatch.Started = fixtureTime.Unix()
+	reserved.Dispatch.Parameters = ID()
+	if e = r.Replace(ctx, queued, reserved); e != nil {
+		t.Fatal(e)
+	}
+	running := copyJob(reserved)
 	running.Version++
 	running.Artifact = "RUNNING"
 	running.Dispatch.State = "ACTIVE"
-	if e = r.Replace(ctx, queued, running); e != nil {
+	if e = r.Replace(ctx, reserved, running); e != nil {
 		t.Fatal(e)
 	}
 	m, _ := manifest(j.ID)
@@ -762,5 +778,70 @@ func TestArtifactsRequireVerifiedUploadsAndMatchingWorker(t *testing.T) {
 	}
 	if readJob(t, r, j.ID).Financial != "AWAITING_PAYMENT" {
 		t.Fatal("result not durable before payment")
+	}
+}
+
+func TestArtifactLifecycleRejectsSkippedStatesAndChangedInputs(t *testing.T) {
+	r, _ := memoryRepo()
+	j := fixtureJob()
+	seed(t, r, j)
+	for _, state := range []string{"QUEUED", "RUNNING", "RESULT_PREPARED", "QUARANTINED", "RETRIEVABLE", "ERASED"} {
+		n := copyJob(j)
+		n.Version++
+		n.Artifact = state
+		if e := r.Replace(ctx, j, n); e != ErrInvalid {
+			t.Fatal("skipped state accepted", state, e)
+		}
+	}
+	n := copyJob(j)
+	n.Version++
+	n.Artifact = "UPLOAD_VERIFIED"
+	n.Inputs[0].ETag = `"verified"`
+	n.Inputs[0].SHA256 = ID()
+	if e := r.Replace(ctx, j, n); e != ErrInvalid {
+		t.Fatal("changed input during completion")
+	}
+	n.Inputs[0].SHA256 = j.Inputs[0].SHA256
+	if e := r.Replace(ctx, j, n); e != nil {
+		t.Fatal("legal upload completion", e)
+	}
+	mut := copyJob(n)
+	mut.Version++
+	mut.Inputs[0].SHA256 = ID()
+	if e := r.Replace(ctx, n, mut); e != ErrInvalid {
+		t.Fatal("changed accepted input")
+	}
+	q, e := r.Queue(ctx, n, ID(), 100, 200)
+	if e != nil {
+		t.Fatal(e)
+	}
+	mut = copyJob(q)
+	mut.Version++
+	mut.Inputs[0].ID = ID()
+	if e = r.Replace(ctx, q, mut); e != ErrInvalid {
+		t.Fatal("changed queued input")
+	}
+	deleting := copyJob(q)
+	deleting.Version++
+	deleting.Artifact = "DELETING"
+	if e = r.Replace(ctx, q, deleting); e != nil {
+		t.Fatal("legal queue cleanup", e)
+	}
+}
+
+func TestArtifactMapRejectsOtherwiseValidSkippedDispatch(t *testing.T) {
+	_, q := queued(t)
+	n := copyJob(q)
+	n.Version++
+	n.Artifact = "RUNNING"
+	n.Dispatch.State = "ACTIVE"
+	n.Dispatch.Started = fixtureTime.Unix()
+	n.Dispatch.Parameters = ID()
+	n.Dispatch.TaskARN = "arn:synthetic:owned"
+	if !n.valid() {
+		t.Fatal("fixture must isolate transition rule")
+	}
+	if validReplacement(q, n) {
+		t.Fatal("queued task skipped durable dispatch reservation")
 	}
 }

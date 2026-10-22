@@ -64,7 +64,7 @@ func (s Payments) ResultQuote(ctx context.Context, id string) (Quote, error) {
 	if !validAmount(s.Amount) || !validOrigin(s.Origin) || s.Config.Mode() == protocol.ModeMock {
 		return Quote{}, ErrInvalid
 	}
-	j, err := s.Repo.Get(ctx, id)
+	j, err := s.get(ctx, id)
 	if err != nil {
 		return Quote{}, err
 	}
@@ -79,11 +79,12 @@ func (s Payments) ResultQuote(ctx context.Context, id string) (Quote, error) {
 		return Quote{}, ErrConflict
 	}
 	if _, err = s.Objects.VerifyResult(ctx, *j.Result); err != nil {
-		s.event(ctx, DocumentFailure)
+		s.artifactError(ctx, err)
 		return Quote{}, err
 	}
 	block, err := s.Chain.Snapshot(ctx, s.Config.Network())
 	if err != nil {
+		s.event(ctx, InfrastructureFailure)
 		return Quote{}, ErrUnknown
 	}
 	q, err := s.Keys.issue(Quote{ID: ID(), Stage: "result", JobID: j.ID, Owner: strings.ToLower(j.Owner), IntentBinding: j.IntentBinding, ResultBinding: resultDigest(*j.Result), Resource: s.Origin + "/csv/jobs/" + j.ID + "/payment", Amount: s.Amount, Network: s.Config.Network(), Asset: strings.ToLower(s.Config.Asset()), Receiver: strings.ToLower(s.Config.PayTo()), Expires: now + 180, StartBlock: block}, now)
@@ -94,7 +95,7 @@ func (s Payments) ResultQuote(ctx context.Context, id string) (Quote, error) {
 	next.Version++
 	next.Quote = &q
 	next.QuoteCount++
-	if err = s.Repo.Replace(ctx, *j, next); err != nil {
+	if err = s.replace(ctx, *j, next); err != nil {
 		return Quote{}, err
 	}
 	s.event(ctx, Requote)
@@ -105,7 +106,7 @@ func (s Payments) Settle(ctx context.Context, id, proof string) (*Job, error) {
 	if !s.Gate.Enabled || !s.Gate.Settlement {
 		return nil, ErrDisabled
 	}
-	j, err := s.Repo.Get(ctx, id)
+	j, err := s.get(ctx, id)
 	if err != nil || j == nil {
 		return j, ErrConflict
 	}
@@ -125,6 +126,7 @@ func (s Payments) Settle(ctx context.Context, id, proof string) (*Job, error) {
 		return j, err
 	}
 	if _, err = s.Objects.VerifyResult(ctx, *j.Result); err != nil {
+		s.artifactError(ctx, err)
 		return j, err
 	}
 	provider, err := s.facilitator(q)
@@ -148,6 +150,9 @@ func (s Payments) Settle(ctx context.Context, id, proof string) (*Job, error) {
 	reservation := Settlement{ID: ID(), Nonce: strings.ToLower(a.Authorization.Nonce), Payer: strings.ToLower(a.Authorization.From), Receiver: q.Receiver, Asset: q.Asset, Network: q.Network, Amount: q.Amount, ValidBefore: before, Started: s.now().Unix(), StartBlock: q.StartBlock}
 	pending, err := s.Repo.ReserveSettlement(ctx, *j, reservation, nonceKey)
 	if err != nil {
+		if err != ErrConflict {
+			s.event(ctx, InfrastructureFailure)
+		}
 		return nil, err
 	}
 	receipt, providerErr := provider.Settle(ctx, p, a) // exactly one call, never a reconcile retry
@@ -164,7 +169,7 @@ func (s Payments) Settle(ctx context.Context, id, proof string) (*Job, error) {
 	if providerErr == nil && receipt != nil && protocol.Hex(receipt.Transaction, 32) && string(receipt.Network) == q.Network && strings.EqualFold(receipt.Payer, j.Owner) {
 		next.Settlement.Transaction = strings.ToLower(receipt.Transaction)
 	}
-	if err = s.Repo.Replace(ctx, pending, next); err != nil {
+	if err = s.replace(ctx, pending, next); err != nil {
 		return nil, ErrUnknown
 	}
 	// Provider success/submission alone never releases the artifact. The selected
@@ -175,7 +180,7 @@ func (s Payments) Reconcile(ctx context.Context, id string) (*Job, error) {
 	if !s.Gate.Enabled {
 		return nil, ErrDisabled
 	}
-	j, err := s.Repo.Get(ctx, id)
+	j, err := s.get(ctx, id)
 	if err != nil || j == nil {
 		return j, ErrConflict
 	}
@@ -189,13 +194,14 @@ func (s Payments) Reconcile(ctx context.Context, id string) (*Job, error) {
 		if err = s.RecoverPending(ctx, id); err != nil {
 			return j, err
 		}
-		j, err = s.Repo.Get(ctx, id)
+		j, err = s.get(ctx, id)
 		if err != nil || j == nil {
 			return nil, ErrUnknown
 		}
 	}
 	outcome, err := s.Chain.Lookup(ctx, *j.Settlement)
 	if err != nil {
+		s.event(ctx, InfrastructureFailure)
 		return j, ErrUnknown
 	}
 	if outcome.State == "PAYMENT_UNKNOWN" {
@@ -222,7 +228,7 @@ func (s Payments) Reconcile(ctx context.Context, id string) (*Job, error) {
 	} else {
 		next.Artifact = "DELETING"
 	}
-	if err = s.Repo.Replace(ctx, *j, next); err != nil {
+	if err = s.replace(ctx, *j, next); err != nil {
 		return nil, ErrUnknown
 	}
 	if next.Financial == "PAID" {
@@ -237,7 +243,7 @@ func (s Payments) RecoverPending(ctx context.Context, id string) error {
 	if !s.Gate.Enabled {
 		return ErrDisabled
 	}
-	j, err := s.Repo.Get(ctx, id)
+	j, err := s.get(ctx, id)
 	if err != nil || j == nil || j.Settlement == nil {
 		return ErrConflict
 	}
@@ -250,7 +256,7 @@ func (s Payments) RecoverPending(ctx context.Context, id string) error {
 	next.Artifact = "QUARANTINED"
 	next.Settlement.State = "PAYMENT_UNKNOWN"
 	next.Settlement.UnknownAt = next.Settlement.Started
-	return s.Repo.Replace(ctx, *j, next)
+	return s.replace(ctx, *j, next)
 }
 
 // VerifyAdmission performs real signature/provider verification without settling
@@ -265,6 +271,7 @@ func (s Payments) VerifyAdmission(ctx context.Context, q Quote, proof string) (s
 	}
 	p, a, err := Decode(ctx, s.Keys, s.Config, q, proof, s.now())
 	if err != nil {
+		s.event(ctx, MalformedPayment)
 		return "", "", err
 	}
 	provider, err := s.facilitator(q)
@@ -273,9 +280,11 @@ func (s Payments) VerifyAdmission(ctx context.Context, q Quote, proof string) (s
 	}
 	valid, err := provider.Verify(ctx, p, a)
 	if err != nil {
+		s.event(ctx, ProviderVerifyFailure)
 		return "", "", ErrUnknown
 	}
 	if !valid {
+		s.event(ctx, PaymentRejected)
 		return "", "", ErrInvalid
 	}
 	key := Hash([]byte(strings.ToLower(q.Network + "|" + q.Asset + "|" + a.Authorization.From + "|" + a.Authorization.Nonce)))
@@ -285,7 +294,7 @@ func (s Payments) Expire(ctx context.Context, id string) error {
 	if !s.Gate.Enabled {
 		return ErrDisabled
 	}
-	j, err := s.Repo.Get(ctx, id)
+	j, err := s.get(ctx, id)
 	if err != nil || j == nil {
 		return ErrConflict
 	}
@@ -303,7 +312,7 @@ func (s Payments) Expire(ctx context.Context, id string) error {
 	if j.Financial == "PAYMENT_UNKNOWN" {
 		next.Remedy = true
 	}
-	return s.Repo.Replace(ctx, *j, next)
+	return s.replace(ctx, *j, next)
 }
 
 // AdmissionChallenge is the expected unsigned 402 stage; no job/resource is
@@ -320,4 +329,26 @@ func (s Payments) AdmissionChallenge(ctx context.Context, intentBinding string) 
 		s.event(ctx, InitialQuote)
 	}
 	return q, e
+}
+
+func (s Payments) get(ctx context.Context, id string) (*Job, error) {
+	j, e := s.Repo.Get(ctx, id)
+	if e != nil {
+		s.event(ctx, InfrastructureFailure)
+	}
+	return j, e
+}
+func (s Payments) replace(ctx context.Context, a, b Job) error {
+	e := s.Repo.Replace(ctx, a, b)
+	if e != nil && e != ErrConflict {
+		s.event(ctx, InfrastructureFailure)
+	}
+	return e
+}
+func (s Payments) artifactError(ctx context.Context, e error) {
+	if e == ErrIntegrity {
+		s.event(ctx, DocumentFailure)
+	} else {
+		s.event(ctx, InfrastructureFailure)
+	}
 }

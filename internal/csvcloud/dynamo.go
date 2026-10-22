@@ -106,7 +106,7 @@ func (r Repository) Create(ctx context.Context, j Job, maximum int64) error {
 	return err
 }
 func (r Repository) Replace(ctx context.Context, old, next Job) error {
-	if !validReplacement(old, next) {
+	if !validReplacement(old, next) || old.Settlement == nil && next.Settlement != nil || old.Dispatch == nil && next.Dispatch != nil {
 		return ErrInvalid
 	}
 	return r.txn(ctx, []d.TransactWriteItem{r.versioned(old, next)})

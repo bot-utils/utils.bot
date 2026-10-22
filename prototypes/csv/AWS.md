@@ -39,7 +39,10 @@ object, then streams its full bytes and SHA-256. An S3 multipart checksum is not
 the full-file hash; ETags are opaque concurrency fences. A lost create response
 can only be recovered by reading the exact reserved key; zero/multiple MPUs stay
 unknown. A lost complete response requires inspecting the original object, never
-a blind completion retry. Stale events cannot manufacture verified input state.
+a blind completion retry. Stale events cannot manufacture verified input state. Explicit artifact and
+financial transition maps reject skipped states. Input identities, byte counts
+and hashes remain frozen; only upload-acceptance ETags may advance. Settlement
+states are closed enums consistent with the financial state.
 
 The queue transaction commits the job, a single-use outbox and a cumulative cost
 reservation. Duplicate sends/receives cannot create a second automatic ECS start.
@@ -132,10 +135,11 @@ financial retention, backups and remedy procedures require a separate policy.
 ## Telemetry and remaining integration boundaries
 
 The optional event sink is disabled. Its exact event record is
-`{schema:1,event:<fixed enum>,count:1,failed_payment:<boolean>}`. Categories separate
+`{schema:1,event:<fixed enum>,count:1,payer_rejected:<boolean>}`. Categories separate
 initial quotes, re-quotes, malformed headers, payment rejection, provider verify
 and settle failures, unknown payment, document failure, infrastructure failure
-and finalized payment. Initial quotes and re-quotes are not failed payments.
+and finalized payment. Only an explicit provider rejection sets `payer_rejected=true`. Initial quotes,
+re-quotes, malformed headers, provider errors and unknown outcomes set it false.
 There are no paths, IDs, wallets, transaction references, hashes, IPs, cookies,
 user agents, raw proofs, file names, document content or free-form diagnostics.
 The PO accepted a seven-day maximum for these encrypted, operator-only records,

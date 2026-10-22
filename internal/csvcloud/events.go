@@ -49,8 +49,8 @@ func (e Event) Name() string {
 }
 
 // Initial quotes are expected protocol discovery, never failed payments.
-func (e Event) FailedPayment() bool {
-	return e == MalformedPayment || e == PaymentRejected || e == ProviderVerifyFailure || e == ProviderSettleFailure
+func (e Event) PayerRejected() bool {
+	return e == PaymentRejected
 }
 
 type EventSink interface{ Count(context.Context, Event) }
@@ -65,9 +65,9 @@ type EventRecord struct {
 	Schema        int    `json:"schema"`
 	Event         string `json:"event"`
 	Count         int    `json:"count"`
-	FailedPayment bool   `json:"failed_payment"`
+	PayerRejected bool   `json:"payer_rejected"`
 }
 
 func (e Event) Record() EventRecord {
-	return EventRecord{Schema: 1, Event: e.Name(), Count: 1, FailedPayment: e.FailedPayment()}
+	return EventRecord{Schema: 1, Event: e.Name(), Count: 1, PayerRejected: e.PayerRejected()}
 }
