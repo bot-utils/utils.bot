@@ -62,6 +62,15 @@ cells are data. Empty strings are literal values; there are no implicit nulls,
 trimming, case folding, dates or numeric coercion for keys. Key comparison is exact
 equality of decoded strings. Spaces and leading zeros are significant.
 
+## Private asynchronous flow rehearsal
+
+A separate [local synthetic upload/job/payment/download flow](FLOW.md) prepares
+all four operations for eventual release. It requires an explicit local gate and
+uses the current 8 MiB Docker worker plus a signature-checking no-funds mock.
+Persistent jobs, upload recovery, payment ambiguity, gzip/range downloads and
+acknowledgement can be exercised without enabling any public CSV route. It is
+separate from the 1 GiB streaming validation and is not the AWS transfer backend.
+
 ## POST /csv/dedupe
 
 Parts: `options`, `file`.
