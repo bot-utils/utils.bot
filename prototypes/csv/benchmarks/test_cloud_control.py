@@ -216,7 +216,11 @@ class ControlTests(unittest.TestCase):
         aws, plan, proof = self.dns_failed_ledger()
         lease = aws.saved[-1]['trial_id']
         ledger = control.Ledger(aws, self.root())
-        ledger.review_stopped_dns_failure(plan, proof, 'a'*40)
+        original = copy.deepcopy(plan)
+        for task in plan['task_definitions']:
+            task['containerDefinitions'][0]['image'] = '818416606421.dkr.ecr.us-east-2.amazonaws.com/utils-bot-csv-trial@sha256:'+'a'*64
+        ledger.review_stopped_dns_failure(plan, proof, 'a'*40, previous_plan=original)
+        self.assertTrue(ledger.state['recovery_review']['immutable_images_repinned'])
         runner = SuccessController(aws, ledger, plan, {})
         runner.run()
         self.assertEqual(len(runner.submitted), 5)

@@ -95,7 +95,7 @@ class Ledger:
         self.etag = result['ETag']
 
 
-    def review_stopped_dns_failure(self, plan, proof, revision):
+    def review_stopped_dns_failure(self, plan, proof, revision, previous_plan=None):
         """Explicit operator recovery of this known failure, never a new lease.
 
         Keep the failed attempt and its entire reservation. Only previously
@@ -107,12 +107,24 @@ class Ledger:
         result = self.aws.call('s3api', 'get-object', '--bucket', BUCKET, '--key', KEY, str(path))
         state = json.loads(path.read_text())
         jobs = state.get('jobs', [])
+        original = previous_plan or plan
+        def resources(value):
+            value = json.loads(json.dumps(value))
+            for task in value['task_definitions']:
+                image = task['containerDefinitions'][0]['image']
+                if not re.fullmatch(ACCOUNT + r'[.]dkr[.]ecr[.]us-east-2[.]amazonaws[.]com/' +
+                                    NAME + r'@sha256:[a-f0-9]{64}', image):
+                    raise TrialFailure('recovery_image_namespace')
+                task['containerDefinitions'][0]['image'] = 'reviewed_immutable_trial_image'
+            return value
+        if resources(original) != resources(plan):
+            raise TrialFailure('recovery_resource_scope_changed')
         if (state.get('phase') != 'failed_or_uncertain' or len(jobs) != 1 or
                 state.get('workers_termination_confirmed') is not True or
                 state.get('recovery_review') or not jobs[0].get('id') or
                 jobs[0]['provider'] != 'fargate' or
                 jobs[0]['label'] != NAME + '-arm-small' or
-                state.get('plan_sha256') != hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()):
+                state.get('plan_sha256') != hashlib.sha256(json.dumps(original, sort_keys=True).encode()).hexdigest()):
             raise TrialFailure('recovery_scope_mismatch')
         if (proof.get('taskArn') != jobs[0]['id'] or proof.get('lastStatus') != 'STOPPED' or
                 proof.get('stopCode') != 'TaskFailedToStart' or
@@ -122,11 +134,16 @@ class Ledger:
         reservation = network_costs.estimate()
         if not network_costs.reservation_fits_reviewed_scope(reservation, 0, 0, 5, True, True, True, 6):
             raise TrialFailure('cost_reservation')
+        state['previous_plan'] = original
+        state['previous_plan_sha256'] = state['plan_sha256']
+        state['plan_sha256'] = hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()
         state['original_reservation'] = state['reservation']
         state['reservation'] = reservation
         jobs[0].update(state='failed_terminal_reviewed', provider_terminal='STOPPED', provider_evidence=proof)
         state.update(phase='claimed', recovery_review={'revision': revision, 'proof_sha256': document_hash(proof),
-                     'scope': 'continue only five unattempted tiers; retain the failed first attempt'})
+                     'scope': 'continue only five unattempted tiers; retain the failed first attempt',
+                     'immutable_images_repinned': original != plan,
+                     'controller_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()})
         state['cleanup_confirmed'] = False
         state['workers_termination_confirmed'] = False
         self.state, self.etag = state, result['ETag']
