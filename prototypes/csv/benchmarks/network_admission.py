@@ -77,9 +77,11 @@ def dns_rules_ok(snapshot, expected):
     if len(rules) != 2:
         return False
     for rule, action, priority, wanted in zip(rules, ('ALLOW', 'BLOCK'), (100, 200), (domains, {'*'})):
+        # AWS returns fully qualified DNS names with one terminal root dot.
+        actual_domains = {name.removesuffix('.') for name in snapshot['dns_domains'][rule['FirewallDomainListId']]}
         if (rule.get('Action') != action or rule.get('Priority') != priority or
                 rule.get('FirewallDomainRedirectionAction') != 'INSPECT_REDIRECTION_DOMAIN' or
-                set(snapshot['dns_domains'][rule['FirewallDomainListId']]) != wanted):
+                actual_domains != wanted):
             return False
         if action == 'BLOCK' and rule.get('BlockResponse') != 'NODATA':
             return False
