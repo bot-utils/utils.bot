@@ -77,6 +77,16 @@ class AdmissionTests(unittest.TestCase):
     def test_private_exact_binding_is_accepted(self):
         self.assertEqual(network_failures(baseline(), EXPECTED), [])
 
+    def test_dns_root_dot_matches_the_same_exact_name_only(self):
+        row = baseline()
+        row['dns_domains'] = {key: [name + '.' for name in names] for key, names in row['dns_domains'].items()}
+        self.assertEqual(network_failures(row, EXPECTED), [])
+        row['endpoints'] = row['endpoints'][:1]
+        self.assertEqual(phase_one_failures(row, EXPECTED), [])
+        for changed in ('api.ecr.us-east-2.amazonaws.com..', '*.amazonaws.com.', ' api.ecr.us-east-2.amazonaws.com.'):
+            changed_row = baseline(); changed_row['dns_domains']['allow'][0] = changed
+            self.assertIn('dns_allowlist_not_verified', network_failures(changed_row, EXPECTED))
+
     def test_reserved_association_priority_is_rejected(self):
         row = baseline(); row['dns_association']['Priority'] = 100
         self.assertIn('dns_allowlist_not_verified', network_failures(row, EXPECTED))
