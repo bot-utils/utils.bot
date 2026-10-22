@@ -118,17 +118,26 @@ func fixture(root, op string, mib int) (int, int64, string, error) {
 	return count, size, hex.EncodeToString(expected.Sum(nil)), nil
 }
 
+type injectionFailure struct{}
+
+func (injectionFailure) Error() string { return "injected_enospc" }
+
 type enospcFailure struct{}
 
 func (enospcFailure) Error() string { return "controlled_enospc" }
 
 type encodedLimit struct {
-	enospc     bool
-	file       *os.File
-	bytes, cap int64
+	inject, injected bool
+	enospc           bool
+	file             *os.File
+	bytes, cap       int64
 }
 
 func (w *encodedLimit) Write(p []byte) (int, error) {
+	if w.inject && w.bytes+int64(len(p)) > 256 {
+		w.injected = true
+		return 0, noSpaceError()
+	}
 	if int64(len(p)) > w.cap-w.bytes {
 		return 0, fmt.Errorf("encoded_limit")
 	}
@@ -179,7 +188,7 @@ func trial(root, op string, mib int, scenario string) (metrics, error) {
 	if e != nil {
 		return metrics{}, e
 	}
-	sink := &encodedLimit{file: out, cap: 2 << 30}
+	sink := &encodedLimit{file: out, cap: 2 << 30, inject: scenario == "enospc-injected"}
 	if scenario == "write-failure" {
 		sink.cap = 256
 	}
@@ -198,6 +207,9 @@ func trial(root, op string, mib int, scenario string) (metrics, error) {
 	if e != nil {
 		zipper.Close()
 		out.Close()
+		if sink.injected {
+			return metrics{}, injectionFailure{}
+		}
 		if sink.enospc {
 			return metrics{}, enospcFailure{}
 		}
@@ -205,6 +217,9 @@ func trial(root, op string, mib int, scenario string) (metrics, error) {
 	}
 	if e = zipper.Close(); e != nil {
 		out.Close()
+		if sink.injected {
+			return metrics{}, injectionFailure{}
+		}
 		if sink.enospc {
 			return metrics{}, enospcFailure{}
 		}
@@ -290,11 +305,16 @@ func main() {
 	if e != nil || len(entries) != 0 {
 		fail()
 	}
-	if *scenario != "baseline" && *scenario != "late-expansion" && *scenario != "output-limit" && *scenario != "write-failure" && *scenario != "fs-full" {
+	if *scenario != "baseline" && *scenario != "late-expansion" && *scenario != "output-limit" && *scenario != "write-failure" && *scenario != "fs-full" && *scenario != "enospc-injected" {
 		fail()
 	}
 	m, e := trial(*root, *op, *mib, *scenario)
 	if e != nil {
+		if *scenario == "enospc-injected" && errors.As(e, new(injectionFailure)) {
+			_, published := os.Stat(*root + "/result.csv.gz")
+			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "failed", "code": "output_unavailable", "enospc_injected": true, "published_absent": os.IsNotExist(published), "shm_status": defaultTmpfsStatus()})
+			os.Exit(1)
+		}
 		if *scenario == "fs-full" && (errors.As(e, new(enospcFailure)) || isENOSPC(e)) {
 			_, published := os.Stat(*root + "/result.csv.gz")
 			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "failed", "code": "output_unavailable", "enospc_observed": true, "published_absent": os.IsNotExist(published)})

@@ -107,5 +107,58 @@ class TransformControlTests(unittest.TestCase):
             self.assertEqual(lease.state['phase'],'failed')
             self.assertEqual(lease.state['reservation']['total_reserved_usd'],'2.000000')
 
+    def test_distinct_matching_tasks_are_ambiguous(self):
+        _,lease=self.lease()
+        def aws(service,action,*args):
+            if action=='list-tasks':return {'taskArns':['one','two']}
+            if action=='describe-tasks':return {'tasks':[{'startedBy':'owned','taskDefinitionArn':'definition','taskArn':v} for v in ('one','two')]}
+            raise AssertionError(action)
+        controller=control.Controller(aws,lease,control.plan('a'*64));controller.definition='definition'
+        with self.assertRaises(shared.TrialFailure):controller.reconcile({'token':'owned'})
+
+    def test_completion_requires_reconciled_parent_and_carries_full_reservations(self):
+        protected={'synthetic':'baseline'}
+        parent=dict(phase='failed',cleanup_confirmed=True,plan_sha256=control.PARENT_PLAN_SHA,worker_source_sha256=control.PARENT_WORKER_SHA,
+                    protected=protected,reservation={'total_reserved_usd':'2.000000'},
+                    jobs=[dict(kind=k,state='verified') for k in ('isolation','trim','lower','upper','replace','late-expansion','output-limit')]+[
+                        dict(kind='fs-full',state='terminal_unverified',exit_code=1,provider_terminal='STOPPED',observed_metrics={'status':'failed','code':'transform_trial_failed'})],
+                    reconciliation={'task_terminal_confirmed':True,'protected_unchanged':True})
+        class ParentAWS(FakeAWS):
+            def call(self,service,action,*args):
+                if action=='get-object':
+                    key=args[args.index('--key')+1]
+                    value=parent if key==control.KEY else {'cleanup_confirmed':True,'reservation':{'total_reserved_usd':'1.078039'}}
+                    Path(args[-1]).write_text(json.dumps(value));return {}
+                return super().call(service,action,*args)
+        aws=ParentAWS();lease=control.Lease(aws,self.root(),'remaining-controls');wanted=control.plan('a'*64,'remaining-controls')
+        lease.claim(wanted,protected)
+        self.assertEqual([v['kind'] for v in wanted['cases']],['enospc-injected','oom','wait'])
+        self.assertEqual(lease.state['max_jobs'],3)
+        self.assertEqual(lease.state['previous_reservation_usd'],'3.078039')
+        self.assertEqual(lease.state['reservation']['total_reserved_usd'],'1.000000')
+        self.assertEqual(lease.key,control.COMPLETION_KEY)
+        self.assertNotEqual(lease.key,control.KEY)
+        parent['cleanup_confirmed']=False
+        with self.assertRaises(shared.TrialFailure):control.Lease(ParentAWS(),self.root(),'remaining-controls').claim(wanted,protected)
+
+    def test_failure_metrics_require_exact_boolean_evidence_and_distinguish_injection(self):
+        _,lease=self.lease()
+        for kind,flags in [('fs-full',{'enospc_observed':True,'published_absent':True}),
+                           ('enospc-injected',{'enospc_injected':True,'published_absent':True,'shm_status':'not_writable'})]:
+            value=dict(status='failed',code='output_unavailable',**flags)
+            def aws(*args):return {'events':[{'message':json.dumps(value)}]}
+            controller=control.Controller(aws,lease,control.plan('a'*64))
+            job=dict(kind=kind,expect='failure',code='output_unavailable',id='synthetic')
+            self.assertEqual(controller.metrics(job),value)
+            original=copy.deepcopy(value)
+            for key in [k for k,v in flags.items() if v is True]:
+                value=copy.deepcopy(original);value[key]=1
+                with self.assertRaises(shared.TrialFailure):controller.metrics(job)
+            value=copy.deepcopy(original);value['unexpected']='PRIVATE_DATA'
+            with self.assertRaises(shared.TrialFailure):controller.metrics(job)
+
+    def test_original_plan_still_matches_preserved_parent(self):
+        self.assertEqual(shared.document_hash(control.plan('fb60410f40aed070086dfb7cacdfd5ab638dc14338d50b394127927c3326c982')),control.PARENT_PLAN_SHA)
+
 
 if __name__=='__main__':unittest.main()

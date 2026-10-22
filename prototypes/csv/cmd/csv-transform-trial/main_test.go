@@ -35,7 +35,7 @@ func TestTrialGoldenBytesAndAtomicPublication(t *testing.T) {
 			t.Fatal("partial file survived publication")
 		}
 	}
-	for _, scenario := range []string{"late-expansion", "output-limit", "write-failure"} {
+	for _, scenario := range []string{"late-expansion", "output-limit", "write-failure", "enospc-injected"} {
 		root := privateRoot(t)
 		result, e := trial(root, "replace", 1, scenario)
 		if e == nil || result.Status != "" {

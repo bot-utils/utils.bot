@@ -42,10 +42,19 @@ func Install() error {
 		return e
 	}
 	// SECCOMP_SET_MODE_FILTER + TSYNC covers every existing Go runtime thread.
-	_, _, e = syscall.RawSyscall(nr, 1, 1, uintptr(unsafe.Pointer(&program)))
+	result, _, errno := syscall.RawSyscall(nr, 1, 1, uintptr(unsafe.Pointer(&program)))
 	runtime.KeepAlive(p)
-	if e != 0 {
-		return e
+	return filterResult(result, errno)
+}
+
+func filterResult(result uintptr, errno syscall.Errno) error {
+	if errno != 0 {
+		return errno
+	}
+	// TSYNC can return the unsynchronized thread ID without setting errno.
+	// No filter was installed in that case; fail closed before reading data.
+	if result != 0 {
+		return syscall.ESRCH
 	}
 	return nil
 }

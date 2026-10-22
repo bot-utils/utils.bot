@@ -109,3 +109,25 @@ func fillPrivateFS(root string) error {
 	return fmt.Errorf("tmpfs_bound_not_reached")
 }
 func isENOSPC(e error) bool { return errors.Is(e, syscall.ENOSPC) }
+
+func noSpaceError() error { return syscall.ENOSPC }
+func defaultTmpfsStatus() string {
+	var fs syscall.Statfs_t
+	if syscall.Statfs("/dev/shm", &fs) != nil {
+		return "absent"
+	}
+	if fs.Type != 0x01021994 {
+		return "not_tmpfs"
+	}
+	if uint64(fs.Blocks)*uint64(fs.Bsize) > 128<<20 {
+		return "oversized"
+	}
+	_, e := os.MkdirTemp("/dev/shm", "transform-check-")
+	if errors.Is(e, syscall.EROFS) || errors.Is(e, syscall.EACCES) || errors.Is(e, syscall.EPERM) {
+		return "not_writable"
+	}
+	if e != nil {
+		return "unavailable"
+	}
+	return "supported"
+}

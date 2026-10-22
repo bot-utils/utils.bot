@@ -89,6 +89,15 @@ def run(sizes=(16,128,1024)):
             if state(check)['ExitCode']!=0 or json.loads(out.stdout)!={'published_absent':True,'partial_present':True}:
                 raise RuntimeError('partial_result_published')
             print(json.dumps(dict(scenario=scenario,no_published_result=True,scope='local_only')),flush=True);cleanup()
+        name,volume=create(['--mib','1','--op','replace','--scenario','enospc-injected'])
+        out=attach(name,20);value=json.loads(out.stdout)
+        if (state(name)['ExitCode']!=1 or value.get('enospc_injected') is not True or value.get('published_absent') is not True or
+                value.get('shm_status') not in {'absent','not_tmpfs','oversized','not_writable','unavailable','supported'}):raise RuntimeError('injected_enospc_not_observed')
+        expected=dict(status='failed',code='output_unavailable',enospc_injected=True,published_absent=True,shm_status=value['shm_status'])
+        if value!=expected:raise RuntimeError('invalid_injected_metrics')
+        check,_=create(['--probe','artifacts'],volume=volume);out=attach(check,10)
+        if json.loads(out.stdout)!={'published_absent':True,'partial_present':True}:raise RuntimeError('partial_result_published')
+        print(json.dumps(dict(scenario='explicit_enospc_injection',no_published_result=True,scope='local_only')),flush=True);cleanup()
         name,_=create(['--mib','1','--op','trim','--scenario','fs-full'],ipc='private')
         out=attach(name,20)
         expected=dict(status='failed',code='output_unavailable',enospc_observed=True,published_absent=True)

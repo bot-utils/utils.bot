@@ -201,9 +201,15 @@ service or proof of the future credential-bearing transfer boundary.
 
 The local driver is `benchmarks/transform_local.py`; the separately leased cloud
 driver is `benchmarks/transform_control.py`. The old three-operation comparison
-and its ledger remain unchanged. Controlled write failures are distinguished
-from real ENOSPC confined to a small private tmpfs; no test fills the main task or
-host filesystem. Public release still requires upload/resume, durable jobs,
+and its ledger remain unchanged. All four operations passed synthetic 1 GiB ARM
+Fargate cases with byte-identical local/reference results; processing took 17–26
+seconds, excluding startup, fixture generation, independent verification and
+transfers. Fargate isolation, late expansion/output caps, OOM and cancellation
+were checked. Real ENOSPC passed locally in a small private tmpfs. The first
+cloud filesystem-full setup failed unverified and remains in its original ledger;
+a fresh cloud cohort passed explicitly injected ENOSPC handling. Physical
+exhaustion of the main Fargate disk is not claimed. No test fills the main task
+or host filesystem. Public release still requires upload/resume, durable jobs,
 payment/retrieval, pricing, monitoring and the shared production worker review.
 
 ## Errors

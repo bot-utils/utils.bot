@@ -28,6 +28,9 @@ ACCOUNT=shared.ACCOUNT
 NAME=shared.NAME
 BUCKET=shared.BUCKET
 KEY='trial/control/transform-validation-v1.json'
+COMPLETION_KEY='trial/control/transform-controls-completion-v1.json'
+PARENT_PLAN_SHA='2952b5fb698e4397e4488a7637b1e1fdc9909c0ec328478b9a9fb1d6ad96a7e5'
+PARENT_WORKER_SHA='4976502347db2585717f1515e44089f813a4ceb9b898d5b14729a3dc682957de'
 STACK='UtilsBotCsvTrialNetwork'
 VPC='vpc-05be93e77ca1e1d3d'
 SUBNET='subnet-0d1659853364bcb35'
@@ -47,7 +50,7 @@ EXPECTED_LARGE={
 ENDPOINT_IDS=('TransformValidationEcrApi','TransformValidationEcrDocker','TransformValidationLogs')
 
 
-def plan(digest):
+def plan(digest,mode="initial"):
     result=large_plan.build(ACCOUNT,SUBNET,GROUP,digest)
     container=result['task_definition']['containerDefinitions'][0]
     container['name']='transform-trial'
@@ -59,6 +62,10 @@ def plan(digest):
     cases += [dict(kind='oom',command=['--probe','oom'],expect='oom'),dict(kind='wait',command=['--probe','wait'],expect='stopped')]
     result.update(max_jobs=10,cases=cases,scope='synthetic transform validation only')
     result.pop('overrides')
+    if mode=='remaining-controls':
+        result['cases']=[dict(kind='enospc-injected',command=['--mib','1','--op','replace','--scenario','enospc-injected'],expect='failure',code='output_unavailable')]+cases[-2:]
+        result.update(max_jobs=3,scope='finish unattempted OOM/cancellation and a supported injected ENOSPC check; never rerun the failed tmpfs task')
+    elif mode!='initial':raise ValueError('invalid_mode')
     return result
 
 
@@ -83,19 +90,23 @@ def endpoints(template):
     return body
 
 
-def reservation():
+def reservation(jobs=10):
+    if jobs not in (3,10):raise ValueError("invalid_job_count")
     result=network_costs.estimate()
     costs=result['cost_usd'];costs.pop('six_tier_workers')
     rates=network_costs.catalog().pinned
-    workers=(rates['arm_cpu']+2*rates['arm_memory'])*Decimal(10)/3
-    costs['ten_transform_workers']=str(workers)
-    result.update(jobs=10,total_reserved_usd='2.000000',scope='ten serial synthetic transform validation tasks')
-    if sum(Decimal(v) for v in costs.values())>2:raise shared.TrialFailure('cost_reservation')
+    workers=(rates['arm_cpu']+2*rates['arm_memory'])*Decimal(jobs)/3
+    costs['transform_workers']=str(workers)
+    total='1.000000' if jobs==3 else '2.000000'
+    result.update(jobs=jobs,total_reserved_usd=total,scope='bounded serial synthetic transform validation tasks')
+    if sum(Decimal(v) for v in costs.values())>Decimal(total):raise shared.TrialFailure('cost_reservation')
     return result
 
 
 class Lease:
-    def __init__(self,aws,directory):
+    def __init__(self,aws,directory,mode="initial"):
+        if mode not in ("initial","remaining-controls"):raise ValueError("invalid_mode")
+        self.mode=mode;self.key=KEY if mode=="initial" else COMPLETION_KEY
         self.aws=aws;self.directory=Path(directory);self.etag=None
         info=self.directory.stat()
         if not self.directory.is_dir() or self.directory.is_symlink() or info.st_uid!=os.getuid() or info.st_mode&0o077:
@@ -108,21 +119,41 @@ class Lease:
         old=json.loads(legacy.read_text())
         if old.get('cleanup_confirmed') is not True:raise shared.TrialFailure('previous_trial_cleanup_unconfirmed')
         previous=Decimal(old['reservation']['total_reserved_usd'])
-        reserved=reservation()
+        if not previous.is_finite() or previous<0:raise shared.TrialFailure('invalid_previous_reservation')
+        parent_evidence={}
+        if self.mode=='remaining-controls':
+            path=self.directory/'parent-cohort.json'
+            self.aws.call('s3api','get-object','--bucket',BUCKET,'--key',KEY,str(path))
+            parent=json.loads(path.read_text());jobs=parent.get('jobs',[])
+            expected=['isolation','trim','lower','upper','replace','late-expansion','output-limit','fs-full']
+            if (parent.get('phase')!='failed' or parent.get('cleanup_confirmed') is not True or
+                    parent.get('plan_sha256')!=PARENT_PLAN_SHA or parent.get('worker_source_sha256')!=PARENT_WORKER_SHA or
+                    parent.get('protected')!=protected or [j.get('kind') for j in jobs]!=expected or
+                    any(j.get('state')!='verified' for j in jobs[:-1]) or
+                    jobs[-1].get('state')!='terminal_unverified' or jobs[-1].get('exit_code')!=1 or jobs[-1].get('provider_terminal')!='STOPPED' or
+                    jobs[-1].get('observed_metrics')!={'status':'failed','code':'transform_trial_failed'} or
+                    parent.get('reconciliation',{}).get('task_terminal_confirmed') is not True or
+                    parent.get('reconciliation',{}).get('protected_unchanged') is not True):
+                raise shared.TrialFailure('parent_cohort_not_reconciled')
+            amount=Decimal(parent['reservation']['total_reserved_usd'])
+            if not amount.is_finite() or amount<0:raise shared.TrialFailure('invalid_parent_reservation')
+            previous+=amount
+            parent_evidence=dict(key=KEY,sha256=shared.document_hash(parent),attempts=8,unverified_case='fs-full',no_retry=True)
+        reserved=reservation(wanted['max_jobs'])
         if previous+Decimal(reserved['total_reserved_usd'])>5:raise shared.TrialFailure('cumulative_trial_budget')
         self.state=dict(schema_version=1,trial_id=uuid.uuid4().hex,phase='claimed',jobs=[],
                         controller_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),worker_source_sha256=source_hash(),
-                        plan_sha256=shared.document_hash(wanted),reservation=reserved,previous_reservation_usd=str(previous),
+                        plan_sha256=shared.document_hash(wanted),max_jobs=wanted['max_jobs'],parent_evidence=parent_evidence,reservation=reserved,previous_reservation_usd=str(previous),
                         cleanup_confirmed=False,billing_confirmed=False,protected=protected)
         self.save(first=True)
     def save(self,first=False):
         path=self.directory/'ledger.json';path.write_text(json.dumps(self.state,sort_keys=True));path.chmod(0o600)
         condition=['--if-none-match','*'] if first else ['--if-match',self.etag]
-        self.etag=self.aws.call('s3api','put-object','--bucket',BUCKET,'--key',KEY,'--body',str(path),
+        self.etag=self.aws.call('s3api','put-object','--bucket',BUCKET,'--key',self.key,'--body',str(path),
                                 '--server-side-encryption','AES256',*condition)['ETag']
     def reserve(self,case):
         jobs=self.state['jobs']
-        if self.state['phase']!='executing' or len(jobs)>=10 or (jobs and jobs[-1]['state']!='verified'):
+        if self.state['phase']!='executing' or len(jobs)>=self.state['max_jobs'] or (jobs and jobs[-1]['state']!='verified'):
             raise shared.TrialFailure('dispatch_not_admitted')
         if any(job['kind']==case['kind'] for job in jobs):raise shared.TrialFailure('duplicate_case')
         job=dict(case,token='trfm'+uuid.uuid4().hex,state='submission_reserved');jobs.append(job);self.save();return job
@@ -159,10 +190,17 @@ def local_image(digest):
 def protected(aws):
     service=aws('ecs','describe-services','--cluster','agent-pdf-mock','--services','agent-pdf-mock')['services'][0]
     data=dict(service={k:service[k] for k in ('desiredCount','taskDefinition','deploymentConfiguration','networkConfiguration')},networks={})
-    for vpc in ('vpc-0836517e145dc5354','vpc-0b1306800812214dd'):
+    subnets=service['networkConfiguration']['awsvpcConfiguration']['subnets']
+    live={v['VpcId'] for v in aws('ec2','describe-subnets','--subnet-ids',*subnets)['Subnets']}
+    default={v['VpcId'] for v in aws('ec2','describe-vpcs','--filters','Name=is-default,Values=true')['Vpcs']}
+    if len(live)!=1 or len(default)!=1 or VPC in live|default:raise shared.TrialFailure('protected_network_discovery_failed')
+    for vpc in live|default:
         data['networks'][vpc]={action:aws('ec2',action,'--filters','Name=vpc-id,Values='+vpc) for action in ('describe-route-tables','describe-security-groups','describe-subnets')}
+    distributions=aws('cloudfront','list-distributions').get('DistributionList',{}).get('Items',[])
+    ids=[v['Id'] for v in distributions if 'utils.bot' in v.get('Aliases',{}).get('Items',[])]
+    if len(ids)!=1:raise shared.TrialFailure('protected_distribution_discovery_failed')
     # Hash only; never persist the CloudFront origin headers.
-    cf=aws('cloudfront','get-distribution-config','--id','E36TJHHEK0PG7')
+    cf=aws('cloudfront','get-distribution-config','--id',ids[0])
     return dict(config_sha256=shared.document_hash(canonical(data)),cloudfront_sha256=shared.document_hash(canonical(cf)))
 
 
@@ -258,7 +296,13 @@ class Controller:
                     if set(value)!=PROBE_KEYS or not all(v is True for v in value.values()):raise shared.TrialFailure('isolation_failed')
                 elif job['expect']=='failure':
                     expected={'status':'failed','code':job['code']}
-                    if job['kind']=='fs-full':expected.update(enospc_observed=True,published_absent=True)
+                    if job['kind']=='fs-full':
+                        if value.get('enospc_observed') is not True or value.get('published_absent') is not True:raise shared.TrialFailure('unverified_enospc')
+                        expected.update(enospc_observed=True,published_absent=True)
+                    if job['kind']=='enospc-injected':
+                        if value.get('enospc_injected') is not True or value.get('published_absent') is not True:raise shared.TrialFailure('unverified_enospc_injection')
+                        if value.get('shm_status') not in {'absent','not_tmpfs','oversized','not_writable','unavailable','supported'}:raise shared.TrialFailure('invalid_filesystem_diagnostic')
+                        expected.update(enospc_injected=True,published_absent=True,shm_status=value['shm_status'])
                     if value!=expected:raise shared.TrialFailure('unexpected_failure_metrics')
                 else:
                     transform_local.validate(value,1024,job['kind'])
@@ -361,13 +405,14 @@ class Controller:
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image-digest',required=True)
+    parser.add_argument('--mode',choices=['initial','remaining-controls'],default='initial')
     args=parser.parse_args()
-    wanted=plan(args.image_digest)
+    wanted=plan(args.image_digest,args.mode)
     local_image(args.image_digest)
     aws=shared.AWS(os.environ)
     iam(aws.call)
     directory=Path(tempfile.mkdtemp(prefix='utils-transform-cloud-',dir='/private/tmp'));directory.chmod(0o700)
-    lease=Lease(aws,directory)
+    lease=Lease(aws,directory,args.mode)
     lease.claim(wanted,protected(aws.call))
     print(json.dumps(dict(phase='claimed',evidence_directory=str(directory),reservation=lease.state['reservation']['total_reserved_usd'])),flush=True)
     def interrupted(_signum,_frame):raise shared.TrialFailure('controller_interrupted')
