@@ -371,23 +371,7 @@ func prepareSeeded(t *testing.T, r Repository, j Job, m Manifest) Job {
 	if e != nil {
 		t.Fatal(e)
 	}
-	reserved := copyJob(q)
-	reserved.Version++
-	reserved.Artifact = "DISPATCH_RESERVED"
-	reserved.Dispatch.State = "STARTING"
-	reserved.Dispatch.Started = fixtureTime.Unix()
-	reserved.Dispatch.Parameters = ID()
-	if e = r.Replace(ctx, q, reserved); e != nil {
-		t.Fatal(e)
-	}
-	running := copyJob(reserved)
-	running.Version++
-	running.Artifact = "RUNNING"
-	running.Dispatch.State = "ACTIVE"
-	running.Dispatch.TaskARN = "arn:synthetic:owned"
-	if e = r.Replace(ctx, reserved, running); e != nil {
-		t.Fatal(e)
-	}
+	running := startQueued(t, r, q)
 	if e = a.PublishResult(ctx, j.ID, running.Dispatch.Token, m, fixtureTime.Unix()+1800); e != nil {
 		t.Fatal(e)
 	}
@@ -545,4 +529,15 @@ func TestGenericReplacementCannotResolveOrAlterUnknownEvidence(t *testing.T) {
 	if e != nil || got.Financial != "UNPAID" || got.Artifact != "DELETING" || chain.calls.Load() != 2 {
 		t.Fatal("dedicated chain nonpayment resolution", e)
 	}
+}
+
+func startQueued(t *testing.T, r Repository, j Job) Job {
+	t.Helper()
+	f := &fakeECS{definition: taskDefinition()}
+	raw, _ := json.Marshal(f.definition)
+	runner := Runner{Client: f, Repo: r, Gate: Gate{Enabled: true, Dispatch: true}, Cluster: "synthetic", Definition: *f.definition.TaskDefinitionArn, Subnet: "synthetic", SecurityGroup: "synthetic", Container: "parser", IsolationReview: Hash(raw), Now: func() time.Time { return fixtureTime }}
+	if e := runner.Start(ctx, Message{j.ID, j.Dispatch.Token}); e != nil {
+		t.Fatal(e)
+	}
+	return readJob(t, r, j.ID)
 }

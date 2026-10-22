@@ -134,7 +134,7 @@ func (r Runner) Start(ctx context.Context, m Message) error {
 	dispatch.State = "STARTING"
 	dispatch.Started = r.now()
 	dispatch.Parameters = Hash(raw)
-	if err = r.Repo.Replace(ctx, *j, next); err != nil {
+	if err = r.Repo.advanceVerified(ctx, *j, next); err != nil {
 		return err
 	}
 	out, err := r.Client.RunTask(ctx, request, func(o *ecs.Options) { o.RetryMaxAttempts = 1 })
@@ -152,7 +152,7 @@ func (r Runner) Start(ctx context.Context, m Message) error {
 	finished.Artifact = "RUNNING"
 	finished.Dispatch.State = "ACTIVE"
 	finished.Dispatch.TaskARN = *task.TaskArn
-	return r.Repo.Replace(ctx, next, finished)
+	return r.Repo.advanceVerified(ctx, next, finished)
 }
 
 // Reconcile is read-only at ECS. No RunTask is called, even beyond ECS's token
@@ -210,7 +210,7 @@ func (r Runner) Reconcile(ctx context.Context, id string) error {
 			next.Artifact = "PROCESSING_UNKNOWN"
 		}
 	}
-	return r.Repo.Replace(ctx, *j, next)
+	return r.Repo.advanceVerified(ctx, *j, next)
 }
 
 // inspectDefinition pins the full reviewed revision, then checks the parser's

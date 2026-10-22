@@ -39,7 +39,7 @@ func (a Artifacts) AcceptUploads(ctx context.Context, id string) error {
 	}
 	n.Version++
 	n.Artifact = "UPLOAD_VERIFIED"
-	return a.Repo.Replace(ctx, *j, n)
+	return a.Repo.advanceVerified(ctx, *j, n)
 }
 func (a Artifacts) PublishResult(ctx context.Context, id, dispatchToken string, m Manifest, until int64) error {
 	if !a.Gate.Enabled {

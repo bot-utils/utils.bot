@@ -175,9 +175,7 @@ func TestDynamoAtomicIdentitiesCASAndLostReply(t *testing.T) {
 	}
 	next := j
 	next.Version++
-	next.Artifact = "UPLOAD_VERIFIED"
-	next.Inputs = append([]Object(nil), j.Inputs...)
-	next.Inputs[0].ETag = `"verified"`
+	next.Artifact = "DELETING"
 	if e := r.Replace(ctx, j, next); e != nil {
 		t.Fatal(e)
 	}
@@ -379,14 +377,11 @@ func queued(t *testing.T) (Repository, Job) {
 	r, _ := memoryRepo()
 	j := fixtureJob()
 	seed(t, r, j)
-	n := j
-	n.Version++
-	n.Artifact = "UPLOAD_VERIFIED"
-	n.Inputs = append([]Object(nil), j.Inputs...)
-	n.Inputs[0].ETag = `"verified"`
-	if e := r.Replace(ctx, j, n); e != nil {
+	a := Artifacts{Repo: r, Inputs: inputStub{}, Gate: Gate{Enabled: true}, Now: func() time.Time { return fixtureTime }}
+	if e := a.AcceptUploads(ctx, j.ID); e != nil {
 		t.Fatal(e)
 	}
+	n := readJob(t, r, j.ID)
 	j, e := r.Queue(ctx, n, ID(), 100, 200)
 	if e != nil {
 		t.Fatal(e)
@@ -472,19 +467,17 @@ func TestAWSFactoryRegionAndOverride(t *testing.T) {
 	}
 }
 func TestDownloadReservationCASAndImmutableManifest(t *testing.T) {
-	r, j := queued(t)
-	m, _ := manifest(j.ID)
-	n := copyJob(j)
-	n.Version++
-	n.Result = &m
-	n.Artifact = "RETRIEVABLE"
-	n.Financial = "PAID"
-	n.Settlement = &Settlement{ID: ID(), Nonce: "0x" + ID(), Payer: n.Owner, Receiver: "0x2222222222222222222222222222222222222222", Asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", Network: "eip155:8453", Amount: "12345", State: "PAID", Transaction: "0x" + ID(), Started: fixtureTime.Unix(), ValidBefore: fixtureTime.Unix() + 180}
-	n.ResultUntil = fixtureTime.Unix() + 600
-	// Preexisting finalized state is a provider fixture, not a transition that
-	// callers may manufacture with generic Replace.
-	store := r.Client.(*memoryDynamo)
-	store.rows["JOB/"+j.ID] = row(n)
+	s, r, j, client, _, chain := paymentFixture(t)
+	q, e := s.ResultQuote(ctx, j.ID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	chain.outcome = Outcome{State: "PAID", Transaction: "0x" + ID()}
+	if _, e = s.Settle(ctx, j.ID, sign(t, s, q, client)); e != nil {
+		t.Fatal(e)
+	}
+	n := readJob(t, r, j.ID)
+
 	reserved, e := r.ReserveDownload(ctx, n, ID(), 0, 2, fixtureTime.Unix())
 	if e != nil {
 		t.Fatal(e)
@@ -748,22 +741,7 @@ func TestArtifactsRequireVerifiedUploadsAndMatchingWorker(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	reserved := copyJob(queued)
-	reserved.Version++
-	reserved.Artifact = "DISPATCH_RESERVED"
-	reserved.Dispatch.State = "STARTING"
-	reserved.Dispatch.Started = fixtureTime.Unix()
-	reserved.Dispatch.Parameters = ID()
-	if e = r.Replace(ctx, queued, reserved); e != nil {
-		t.Fatal(e)
-	}
-	running := copyJob(reserved)
-	running.Version++
-	running.Artifact = "RUNNING"
-	running.Dispatch.State = "ACTIVE"
-	if e = r.Replace(ctx, reserved, running); e != nil {
-		t.Fatal(e)
-	}
+	running := startQueued(t, r, queued)
 	m, _ := manifest(j.ID)
 	if e = a.PublishResult(ctx, j.ID, ID(), m, fixtureTime.Unix()+1800); e != ErrConflict {
 		t.Fatal("stale worker")
@@ -802,9 +780,11 @@ func TestArtifactLifecycleRejectsSkippedStatesAndChangedInputs(t *testing.T) {
 		t.Fatal("changed input during completion")
 	}
 	n.Inputs[0].SHA256 = j.Inputs[0].SHA256
-	if e := r.Replace(ctx, j, n); e != nil {
+	a := Artifacts{Repo: r, Inputs: inputStub{}, Gate: Gate{Enabled: true}, Now: func() time.Time { return fixtureTime }}
+	if e := a.AcceptUploads(ctx, j.ID); e != nil {
 		t.Fatal("legal upload completion", e)
 	}
+	n = readJob(t, r, j.ID)
 	mut := copyJob(n)
 	mut.Version++
 	mut.Inputs[0].SHA256 = ID()
@@ -843,5 +823,62 @@ func TestArtifactMapRejectsOtherwiseValidSkippedDispatch(t *testing.T) {
 	}
 	if validReplacement(q, n) {
 		t.Fatal("queued task skipped durable dispatch reservation")
+	}
+}
+
+func TestGenericUpdatesCannotCreateQueueOrResultEvidence(t *testing.T) {
+	r, queuedJob := queued(t)
+	running := startQueued(t, r, queuedJob)
+	store := r.Client.(*memoryDynamo)
+	writes := len(store.transactions)
+	m, _ := manifest(running.ID)
+	n := copyJob(running)
+	n.Version++
+	n.Artifact = "RESULT_PREPARED"
+	n.Result = &m
+	if n.valid() {
+		t.Fatal("prepared result may not remain UNPAID")
+	}
+	if e := r.Replace(ctx, running, n); e != ErrInvalid {
+		t.Fatal("unverified result published", e)
+	}
+	// Even an otherwise valid deletion update cannot introduce result evidence.
+	n.Artifact = "DELETING"
+	if !n.valid() {
+		t.Fatal("fixture must isolate generic result freeze")
+	}
+	if e := r.Replace(ctx, running, n); e != ErrInvalid {
+		t.Fatal("generic result introduction", e)
+	}
+	if len(store.transactions) != writes {
+		t.Fatal("forbidden result write reached DynamoDB")
+	}
+	r2, memory := memoryRepo()
+	j := fixtureJob()
+	seed(t, r2, j)
+	a := Artifacts{Repo: r2, Inputs: inputStub{}, Gate: Gate{Enabled: true}, Now: func() time.Time { return fixtureTime }}
+	if e := a.AcceptUploads(ctx, j.ID); e != nil {
+		t.Fatal(e)
+	}
+	old := readJob(t, r2, j.ID)
+	writes = len(memory.transactions)
+	forged := copyJob(old)
+	forged.Version++
+	forged.Artifact = "QUEUED"
+	if forged.valid() {
+		t.Fatal("queued state without dispatch accepted")
+	}
+	if e := r2.Replace(ctx, old, forged); e != ErrInvalid {
+		t.Fatal("generic queue without reservation", e)
+	}
+	forged.Dispatch = &Dispatch{Token: ID(), State: "RESERVED", ReservedMicroUSD: 100}
+	if !forged.valid() {
+		t.Fatal("fixture must isolate queue transaction fence")
+	}
+	if e := r2.Replace(ctx, old, forged); e != ErrInvalid {
+		t.Fatal("generic queue bypassed outbox and budget", e)
+	}
+	if len(memory.transactions) != writes {
+		t.Fatal("forbidden queue write reached DynamoDB")
 	}
 }

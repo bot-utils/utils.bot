@@ -106,8 +106,28 @@ func (r Repository) Create(ctx context.Context, j Job, maximum int64) error {
 	}
 	return err
 }
+
+// Replace is deliberately limited to challenge updates and marking deletion.
+// Evidence-bearing lifecycle and download changes use their dedicated methods.
 func (r Repository) Replace(ctx context.Context, old, next Job) error {
-	if !validReplacement(old, next) || old.Financial != next.Financial || !reflect.DeepEqual(old.Settlement, next.Settlement) || old.Settlement == nil && next.Settlement != nil || old.Dispatch == nil && next.Dispatch != nil {
+	if !validReplacement(old, next) || old.Artifact != next.Artifact && next.Artifact != "DELETING" {
+		return ErrInvalid
+	}
+	permitted := copyJob(old)
+	permitted.Version = next.Version
+	permitted.Quote = next.Quote
+	permitted.QuoteCount = next.QuoteCount
+	permitted.Artifact = next.Artifact
+	permitted.Remedy = next.Remedy
+	if !reflect.DeepEqual(permitted, next) {
+		return ErrInvalid
+	}
+	return r.advanceVerified(ctx, old, next)
+}
+
+// advanceVerified is private to the evidence-checking operations in this package.
+func (r Repository) advanceVerified(ctx context.Context, old, next Job) error {
+	if !validReplacement(old, next) {
 		return ErrInvalid
 	}
 	return r.txn(ctx, []d.TransactWriteItem{r.versioned(old, next)})
@@ -169,7 +189,7 @@ func (r Repository) ClaimDownload(ctx context.Context, old Job, now int64) (*Dow
 	next := old
 	next.Version++
 	next.DownloadClaimed = true
-	if err := r.Replace(ctx, old, next); err != nil {
+	if err := r.advanceVerified(ctx, old, next); err != nil {
 		return nil, err
 	}
 	return &DownloadPermit{job: next}, nil
