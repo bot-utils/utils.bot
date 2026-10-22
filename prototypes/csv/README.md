@@ -248,3 +248,10 @@ first known stopped ARM-small DNS failure with matching task evidence and a
 reviewed source revision. It retains the same S3 lease and full reservation and
 runs only the five unattempted tiers. It cannot retry that tier, reset the count
 or resume an uncertain submission.
+
+Glue can retain its network interface for several minutes after a successful
+job. The trial waits up to ten minutes for release. If that wait ends early,
+operator review can accept the already validated Glue-small result only after
+fresh phase-one network checks confirm cleanup, preserving its original
+provider evidence and all five attempt records. Only the last unattempted
+Glue-large tier may then run; no job or reservation is reset.

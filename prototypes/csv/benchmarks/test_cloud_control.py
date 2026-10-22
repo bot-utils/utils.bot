@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import cloud_control as control
 import cloud_smoke
@@ -245,6 +246,32 @@ class ControlTests(unittest.TestCase):
                 ledger = control.Ledger(aws, self.root())
                 with self.assertRaises(control.TrialFailure):
                     ledger.review_stopped_dns_failure(plan, proof, 'a'*40)
+
+    def test_late_glue_cleanup_preserves_five_attempts_and_runs_only_last_tier(self):
+        aws = FakeAWS(); plan = self.plan(); ledger = control.Ledger(aws, self.root()); ledger.claim(plan)
+        labels = [t['family'] for t in plan['task_definitions']] + [plan['glue_jobs'][0]['Name']]
+        states = ['failed_terminal_reviewed', 'verified', 'verified', 'verified', 'submitted']
+        ledger.state['jobs'] = [{'label':label,'state':state,'provider':'glue' if i==4 else 'fargate',
+                                 'id':'owned-'+str(i),'token':'token-'+str(i)} for i,(label,state) in enumerate(zip(labels,states))]
+        metrics = cloud_smoke.smoke(self.root())
+        metrics.update(provider_label='glue', supervisor_seconds=1,
+                       provider_evidence_required=True, provider_storage_cleanup_required=True)
+        ledger.state['jobs'][-1].update(provider_terminal='SUCCEEDED', metrics=metrics)
+        ledger.state.update(phase='failed_or_uncertain', workers_termination_confirmed=True)
+        ledger.save()
+        expected = {'account_id':control.ACCOUNT,'vpc_id':'vpc-05be93e77ca1e1d3d','subnet_id':'subnet-0d1659853364bcb35'}
+        restored = control.Ledger(aws, self.root())
+        with patch.object(control.network_admission, 'phase_one_failures', return_value=['cleanup_unknown']):
+            with self.assertRaises(control.TrialFailure):
+                restored.review_late_glue_cleanup(plan, {}, expected, 'a'*40)
+        with patch.object(control.network_admission, 'phase_one_failures', return_value=[]):
+            restored.review_late_glue_cleanup(plan, {'checked_at':'fresh-checked-time'}, expected, 'a'*40)
+        runner = SuccessController(aws, restored, plan, {}); runner.run()
+        self.assertEqual(len(runner.submitted), 1)
+        self.assertEqual(len(restored.state['jobs']), 6)
+        self.assertTrue(restored.state['jobs'][4]['late_cleanup_confirmed'])
+        self.assertEqual(restored.state['jobs'][0]['state'], 'failed_terminal_reviewed')
+        self.assertEqual(restored.state['phase'], 'attempts_complete')
 
     def test_code_readback_rejects_changed_bytes_before_dispatch(self):
         aws = FakeAWS(); ledger = control.Ledger(aws, self.root())

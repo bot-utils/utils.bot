@@ -3,7 +3,7 @@ import concurrent.futures
 import datetime
 import network_admission
 
-def read(aws):
+def read(aws, allow_removed_runtime=False):
 
     def batch(calls):
         with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
@@ -26,11 +26,21 @@ def read(aws):
         raise RuntimeError('network_readback_invariant') from None
     if not out['GlueSecurityGroup'] == 'sg-0e263078696001505':
         raise RuntimeError('network_readback_invariant') from None
-    data = batch({'vpc': ['ec2', 'describe-vpcs', '--vpc-ids', vpc], 'subnet': ['ec2', 'describe-subnets', '--subnet-ids', out['TrialSubnet']], 'sgs': ['ec2', 'describe-security-groups', '--filters', 'Name=vpc-id,Values=' + vpc], 'routes': ['ec2', 'describe-route-tables', '--filters', 'Name=vpc-id,Values=' + vpc], 'endpoints': ['ec2', 'describe-vpc-endpoints', '--filters', 'Name=vpc-id,Values=' + vpc], 'enis': ['ec2', 'describe-network-interfaces', '--filters', 'Name=vpc-id,Values=' + vpc], 'firewall': ['route53resolver', 'get-firewall-config', '--resource-id', vpc], 'association': ['route53resolver', 'get-firewall-rule-group-association', '--firewall-rule-group-association-id', physical['DnsAssociation']], 'rules': ['route53resolver', 'list-firewall-rules', '--firewall-rule-group-id', physical['DnsFirewall']], 'allow': ['route53resolver', 'list-firewall-domains', '--firewall-domain-list-id', physical['AllowedDnsNames']], 'block': ['route53resolver', 'list-firewall-domains', '--firewall-domain-list-id', physical['BlockedDnsNames']], 'associations': ['route53resolver', 'list-firewall-rule-group-associations'], 'peerings': ['ec2', 'describe-vpc-peering-connections'], 'transit': ['ec2', 'describe-transit-gateway-vpc-attachments'], 'vpn': ['ec2', 'describe-vpn-gateways'], 'igw': ['ec2', 'describe-internet-gateways', '--filters', 'Name=attachment.vpc-id,Values=' + vpc], 'egress': ['ec2', 'describe-egress-only-internet-gateways'], 'nats': ['ec2', 'describe-nat-gateways', '--filter', 'Name=vpc-id,Values=' + vpc], 'jobs': ['glue', 'get-jobs', '--query', 'Jobs[].Name'], 'tasks': ['ecs', 'list-tasks', '--cluster', 'utils-bot-csv-trial', '--desired-status', 'RUNNING'], 'dns_support': ['ec2', 'describe-vpc-attribute', '--vpc-id', vpc, '--attribute', 'enableDnsSupport'], 'dns_hostnames': ['ec2', 'describe-vpc-attribute', '--vpc-id', vpc, '--attribute', 'enableDnsHostnames']})
+    data = batch({'vpc': ['ec2', 'describe-vpcs', '--vpc-ids', vpc], 'subnet': ['ec2', 'describe-subnets', '--subnet-ids', out['TrialSubnet']], 'sgs': ['ec2', 'describe-security-groups', '--filters', 'Name=vpc-id,Values=' + vpc], 'routes': ['ec2', 'describe-route-tables', '--filters', 'Name=vpc-id,Values=' + vpc], 'endpoints': ['ec2', 'describe-vpc-endpoints', '--filters', 'Name=vpc-id,Values=' + vpc], 'enis': ['ec2', 'describe-network-interfaces', '--filters', 'Name=vpc-id,Values=' + vpc], 'firewall': ['route53resolver', 'get-firewall-config', '--resource-id', vpc], 'association': ['route53resolver', 'get-firewall-rule-group-association', '--firewall-rule-group-association-id', physical['DnsAssociation']], 'rules': ['route53resolver', 'list-firewall-rules', '--firewall-rule-group-id', physical['DnsFirewall']], 'allow': ['route53resolver', 'list-firewall-domains', '--firewall-domain-list-id', physical['AllowedDnsNames']], 'block': ['route53resolver', 'list-firewall-domains', '--firewall-domain-list-id', physical['BlockedDnsNames']], 'associations': ['route53resolver', 'list-firewall-rule-group-associations'], 'peerings': ['ec2', 'describe-vpc-peering-connections'], 'transit': ['ec2', 'describe-transit-gateway-vpc-attachments'], 'vpn': ['ec2', 'describe-vpn-gateways'], 'igw': ['ec2', 'describe-internet-gateways', '--filters', 'Name=attachment.vpc-id,Values=' + vpc], 'egress': ['ec2', 'describe-egress-only-internet-gateways'], 'nats': ['ec2', 'describe-nat-gateways', '--filter', 'Name=vpc-id,Values=' + vpc], 'jobs': ['glue', 'get-jobs', '--query', 'Jobs[].Name'], 'dns_support': ['ec2', 'describe-vpc-attribute', '--vpc-id', vpc, '--attribute', 'enableDnsSupport'], 'dns_hostnames': ['ec2', 'describe-vpc-attribute', '--vpc-id', vpc, '--attribute', 'enableDnsHostnames']})
     if not not any((isinstance(v, dict) and 'error' in v for v in data.values())):
         raise RuntimeError('network_readback_invariant') from None
     if not (data['dns_support']['EnableDnsSupport']['Value'] and data['dns_hostnames']['EnableDnsHostnames']['Value']):
         raise RuntimeError('network_readback_invariant') from None
+    removed = False
+    if allow_removed_runtime:
+        runtime = aws('ecs', 'describe-clusters', '--clusters', 'utils-bot-csv-trial')
+        missing = runtime.get('failures', [])
+        removed = (runtime.get('clusters') == [] and len(missing) == 1 and
+                   missing[0].get('reason') == 'MISSING' and
+                   missing[0].get('arn') == 'arn:aws:ecs:us-east-2:818416606421:cluster/utils-bot-csv-trial')
+        if not runtime.get('clusters') and not removed:
+            raise RuntimeError('runtime_inventory_unknown')
+    data['tasks'] = {'taskArns': []} if removed else aws('ecs', 'list-tasks', '--cluster', 'utils-bot-csv-trial', '--desired-status', 'RUNNING')
     groups = {s['GroupId']: s for s in data['sgs']['SecurityGroups']}
     interfaces = data['enis']['NetworkInterfaces']
     if not len(groups) == 4:
