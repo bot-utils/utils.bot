@@ -208,7 +208,7 @@ func (d Docker) run(ctx context.Context, job Job, mode string) (result tabular.R
 	return *reply.Result, nil
 }
 func knownError(e *tabular.Error) bool {
-	valid := map[string]int{"invalid_csv": 400, "invalid_options": 400, "invalid_parts": 400, "unknown_operation": 400, "file_limit": 413, "column_limit": 413, "header_limit": 413, "cell_limit": 413, "row_limit": 413, "output_row_limit": 413, "output_byte_limit": 413, "options_limit": 413, "join_pair_limit": 413, "group_limit": 413, "invalid_header": 422, "invalid_columns": 422, "invalid_keep": 422, "invalid_join_type": 422, "invalid_prefix": 422, "output_column_collision": 422, "invalid_metrics": 422, "invalid_decimal": 422, "decimal_range": 422}
+	valid := map[string]int{"invalid_csv": 400, "invalid_options": 400, "invalid_parts": 400, "unknown_operation": 400, "file_limit": 413, "column_limit": 413, "header_limit": 413, "cell_limit": 413, "row_limit": 413, "output_row_limit": 413, "output_byte_limit": 413, "options_limit": 413, "join_pair_limit": 413, "group_limit": 413, "invalid_header": 422, "invalid_columns": 422, "invalid_keep": 422, "invalid_join_type": 422, "invalid_prefix": 422, "output_column_collision": 422, "invalid_metrics": 422, "invalid_decimal": 422, "decimal_range": 422, "invalid_transform": 422, "transform_unavailable": 503}
 	return valid[e.Code] == e.Status && e.Status != 0
 }
 func validResult(op string, r tabular.Result) bool {
@@ -216,6 +216,9 @@ func validResult(op string, r tabular.Result) bool {
 		return false
 	}
 	if op == "aggregate" && r.OutputRows > tabular.MaxGroups {
+		return false
+	}
+	if op == "transform" && r.OutputRows != r.InputRows["file"] {
 		return false
 	}
 	expected := 1

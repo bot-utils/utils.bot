@@ -39,6 +39,9 @@ assert joined["rows"] == [["a", "west", "pro"], ["a", "west", "team"], ["b", "ea
 totals, _ = call("aggregate", {"metrics": [{"name": "total", "op": "sum", "column": "amount"}]},
     file=b"amount\n0.1\n0.2\n")
 assert totals["rows"] == [["0.3"]]
+transformed, _ = call("transform", {"column": "email", "op": "lower"},
+    file=b"id,email\n01,AGENT@EXAMPLE.INVALID\n")
+assert transformed["rows"] == [["01", "agent@example.invalid"]]
 source = b"region,amount,description\n" + b"".join(
     ("%s,0.10,synthetic repeated event payload\n" % ["west", "east", "north"][i % 3]).encode()
     for i in range(50_000))

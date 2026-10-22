@@ -305,7 +305,7 @@ func (b *builder) add(row []string, maxRows int) error {
 }
 
 func Execute(operation string, raw json.RawMessage, inputs map[string][]byte) (Result, error) {
-	if operation != "dedupe" && operation != "join" && operation != "aggregate" {
+	if operation != "dedupe" && operation != "join" && operation != "aggregate" && operation != "transform" {
 		return Result{}, bad("unknown_operation")
 	}
 	if len(raw) > MaxOptions {
@@ -335,6 +335,8 @@ func Execute(operation string, raw json.RawMessage, inputs map[string][]byte) (R
 		return dedupe(tables["file"], raw)
 	case "join":
 		return join(tables["left"], tables["right"], raw)
+	case "transform":
+		return transform(tables["file"], raw)
 	default:
 		return aggregate(tables["file"], raw)
 	}
