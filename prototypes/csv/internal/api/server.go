@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"utils.bot/csvprototype/internal/tabular"
+	"pdfservice/internal/csvtabular"
 )
 
 const MaxRequest = 2*tabular.MaxFile + tabular.MaxOptions + (64 << 10)

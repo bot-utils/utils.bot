@@ -742,6 +742,7 @@ func TestArtifactsRequireVerifiedUploadsAndMatchingWorker(t *testing.T) {
 		t.Fatal(e)
 	}
 	running := startQueued(t, r, queued)
+	running = transferProof(t, r, running)
 	m, _ := manifest(j.ID)
 	if e = a.PublishResult(ctx, j.ID, ID(), m, fixtureTime.Unix()+1800); e != ErrConflict {
 		t.Fatal("stale worker")

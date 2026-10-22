@@ -46,7 +46,13 @@ type Result struct {
 	OutputRows int            `json:"output_rows"`
 }
 
-func ReadCSV(data []byte) (Table, error) {
+func ReadCSV(data []byte) (Table, error) { return readCSV(data, MaxColumns) }
+
+// ReadOutputCSV accepts the larger schema created by a two-input join without
+// widening the input contract. Other header/cell/row/UTF-8 bounds stay identical.
+func ReadOutputCSV(data []byte) (Table, error) { return readCSV(data, 2*MaxColumns-1) }
+
+func readCSV(data []byte, maxColumns int) (Table, error) {
 	if len(data) > MaxFile {
 		return Table{}, limit("file_limit")
 	}
@@ -58,7 +64,7 @@ func ReadCSV(data []byte) (Table, error) {
 	if err != nil {
 		return Table{}, bad("invalid_csv")
 	}
-	if len(header) > MaxColumns {
+	if len(header) > maxColumns {
 		return Table{}, limit("column_limit")
 	}
 	seen := make(map[string]bool, len(header))

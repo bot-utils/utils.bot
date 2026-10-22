@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"utils.bot/csvprototype/internal/api"
+	"pdfservice/prototypes/csv/internal/api"
 )
 
 func request(t *testing.T, h http.Handler, method, path string, body any, headers map[string]string) *httptest.ResponseRecorder {

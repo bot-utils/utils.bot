@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"utils.bot/csvprototype/internal/tabular"
-	"utils.bot/csvprototype/internal/transformguard"
+	"pdfservice/internal/csvguard"
+	"pdfservice/internal/csvtabular"
 )
 
 var samples = []struct{ raw, trim, lower, upper, replace string }{
