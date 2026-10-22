@@ -137,8 +137,9 @@ one row: count `"0"`, sum `"0"`, min/max `""` meaning no observation.
 ## POST /csv/transform
 
 Parts: `options`, `file`. Transform is prepared for the eventual CSV release;
-it is currently implemented only in this local prototype, at the common small-file
-limits above. It has not been deployed or validated on large files in Fargate.
+the HTTP prototype keeps the common small-file limits above. A separate synthetic
+streaming validation path reuses the same Go transformation logic and has passed
+1 GiB cases on ARM Fargate. The customer upload/job/payment path is not deployed.
 
 ```json
 {"column":"email","op":"lower"}
@@ -179,6 +180,31 @@ serialized-output byte and row caps apply to the complete result. Any row or
 output failure returns only a fixed error, with no partial result. Existing
 network-disabled worker, deadline, memory, cleanup and content-free logging rules
 apply. Transform does not make hostile text safe for a model or spreadsheet.
+
+## Streaming transform validation
+
+`internal/tabular/stream_transform.go` processes one record at a time and shares
+compiled options and cell transformations with the request-sized implementation.
+It bounds raw fields/records before the CSV decoder allocates them. Input, rows,
+logical output and encoded output have independent limits; callers must use
+private staging and discard partial bytes on any error.
+
+`cmd/csv-transform-trial/` is a synthetic-only validation binary, not a customer
+API. Its fixed golden Unicode cases include quoted newlines, empty cells, formula
+and instruction text, and unchanged columns. It stages deterministic gzip bytes,
+closes and syncs the encoder, independently checks the entire decompressed
+artifact, then renames the private staged result. It emits only bounded synthetic
+metrics. The selected ARM worker installs a process-wide Linux filter before
+reading data: sockets, io_uring, process execution/spawn and foreign descriptor
+acquisition are denied. This is defense in depth, not an arbitrary-code execution
+service or proof of the future credential-bearing transfer boundary.
+
+The local driver is `benchmarks/transform_local.py`; the separately leased cloud
+driver is `benchmarks/transform_control.py`. The old three-operation comparison
+and its ledger remain unchanged. Controlled write failures are distinguished
+from real ENOSPC confined to a small private tmpfs; no test fills the main task or
+host filesystem. Public release still requires upload/resume, durable jobs,
+payment/retrieval, pricing, monitoring and the shared production worker review.
 
 ## Errors
 
