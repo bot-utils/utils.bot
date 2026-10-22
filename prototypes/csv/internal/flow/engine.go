@@ -30,7 +30,14 @@ type Engine struct {
 }
 
 func New(store *Store, provider Provider, work api.Worker) (*Engine, error) {
-	e := &Engine{Store: store, Provider: provider, Work: work, Now: time.Now, cancel: map[string]context.CancelFunc{}}
+	return NewWithLogger(store, provider, work, nil)
+}
+
+// NewWithLogger attaches telemetry before durable restart recovery. Callers that
+// need lifecycle events must supply it here, before any recovery transition.
+func NewWithLogger(store *Store, provider Provider, work api.Worker, logger *slog.Logger) (*Engine, error) {
+	e := &Engine{Logger: logger, Store: store, Provider: provider, Work: work, Now: time.Now, cancel: map[string]context.CancelFunc{}}
+	unknownTransitions := 0
 	err := store.tx(true, func(d *database) error {
 		for _, j := range d.Jobs {
 			if j.Token != "" {
@@ -41,14 +48,21 @@ func New(store *Store, provider Provider, work api.Worker) (*Engine, error) {
 			}
 			if j.Financial == "SETTLEMENT_PENDING" {
 				j.Financial = "PAYMENT_UNKNOWN"
+				j.Reservation.Outcome = "PAYMENT_UNKNOWN"
 				j.UnknownAt = j.Reservation.Started
 				j.Artifact = "QUARANTINED"
+				unknownTransitions++
 			}
 			// The exclusive process lock proves previous local broker streams terminated.
 			j.ActiveDownload = ""
 		}
 		return nil
 	})
+	if err == nil {
+		for n := 0; n < unknownTransitions; n++ {
+			e.logFinancialTransition("job_recovery", "restart_recovery", "PAYMENT_UNKNOWN")
+		}
+	}
 	return e, err
 }
 func (e *Engine) now() int64 { return e.Now().Unix() }
@@ -309,7 +323,8 @@ func (e *Engine) Status(id, cap string) (Status, error) {
 	return out, err
 }
 func (e *Engine) Sweep() error {
-	return e.Store.tx(true, func(d *database) error {
+	unknownTransitions := 0
+	err := e.Store.tx(true, func(d *database) error {
 		now := e.now()
 		for _, j := range d.Jobs {
 			if j.ActiveDownload != "" && j.Downloads[j.ActiveDownload].Until <= now {
@@ -321,8 +336,10 @@ func (e *Engine) Sweep() error {
 			if now >= j.expiry() {
 				if j.Financial == "SETTLEMENT_PENDING" {
 					j.Financial = "PAYMENT_UNKNOWN"
+					j.Reservation.Outcome = "PAYMENT_UNKNOWN"
 					j.UnknownAt = j.Reservation.Started
 					j.Artifact = "QUARANTINED"
+					unknownTransitions++
 				} else {
 					j.deleting()
 				}
@@ -333,6 +350,12 @@ func (e *Engine) Sweep() error {
 		}
 		return nil
 	})
+	if err == nil {
+		for n := 0; n < unknownTransitions; n++ {
+			e.logFinancialTransition("job_expiry", "reservation_expiry", "PAYMENT_UNKNOWN")
+		}
+	}
+	return err
 }
 func (e *Engine) Cancel(id, cap string) error {
 	err := e.Store.tx(true, func(d *database) error {

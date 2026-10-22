@@ -172,7 +172,11 @@ func (e *Engine) recordOutcome(id, reservationID, outcome string, reconciled boo
 		if reconciled {
 			route = "payment_reconcile"
 		}
-		e.Logger.Info("csv flow", "route", route, "category", financialCategory(Status{Financial: current, Code: "payment_rejected"}), "financial_state", current, "status", 200)
+		source := "provider_response"
+		if reconciled {
+			source = "authoritative_reconciliation"
+		}
+		e.logFinancialTransition(route, source, current)
 	}
 	return err
 }
@@ -200,4 +204,12 @@ func (e *Engine) Reconcile(ctx context.Context, id, cap string) (Status, error) 
 		return Status{}, err
 	}
 	return e.Status(id, cap)
+}
+
+// Called only after the state transaction has successfully persisted. Values are
+// fixed lifecycle labels; no job, payer, proof, capability or content identifiers.
+func (e *Engine) logFinancialTransition(route, source, state string) {
+	if e.Logger != nil {
+		e.Logger.Info("csv flow", "route", route, "category", financialCategory(Status{Financial: state, Code: "payment_rejected"}), "financial_state", state, "source", source, "status", 200)
+	}
 }

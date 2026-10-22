@@ -65,11 +65,11 @@ func main() {
 	}
 	defer store.Close()
 	provider := &flow.MockProvider{Store: store, Key: key}
-	engine, err := flow.New(store, provider, (api.Docker{Image: *image}).Run)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	engine, err := flow.NewWithLogger(store, provider, (api.Docker{Image: *image}).Run, logger)
 	if err != nil {
 		log.Fatal("flow recovery unavailable")
 	}
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	handler := flow.NewHTTP(engine, true, logger)
 	server := &http.Server{Addr: *address, Handler: handler, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 45 * time.Second, IdleTimeout: 5 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: log.New(io.Discard, "", 0)}
 	listener, err := net.Listen("tcp", *address)

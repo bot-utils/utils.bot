@@ -129,7 +129,11 @@ Telemetry includes only fixed route templates/status/category. Admission quote,
 result challenge, malformed/duplicate payment header, invalid signature, verified
 proof rejection (owner/binding/expiry), definitive provider rejection, actual provider attempt,
 pending settlement, unknown outcome and confirmed PAID are distinct. Payment outcome events are emitted only after a persisted financial state
-transition. Status polls, reconciliation replies and proof replays log separate
+transition. Restart recovery and pending-reservation expiry emit the same
+`payment_unknown` event after successful persistence, with fixed `restart_recovery`
+or `reservation_expiry` source labels; the executable attaches its logger before
+startup recovery. Repeated recovery/sweeps do not repeat an existing transition.
+Status polls, reconciliation replies and proof replays log separate
 observation categories plus the fixed `financial_state`; they do not count as
 another payment, rejection or unknown outcome. Unpaid result access uses
 `result_payment_required`, separate from a new payment challenge.
