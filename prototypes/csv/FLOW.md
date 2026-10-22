@@ -128,7 +128,12 @@ accepted-but-reply-lost and crash-before-paid-write tests across restart.
 Telemetry includes only fixed route templates/status/category. Admission quote,
 result challenge, malformed/duplicate payment header, invalid signature, verified
 proof rejection (owner/binding/expiry), definitive provider rejection, actual provider attempt,
-pending settlement, unknown outcome and confirmed PAID are distinct. No job IDs, payer/nonce, proofs,
+pending settlement, unknown outcome and confirmed PAID are distinct. Payment outcome events are emitted only after a persisted financial state
+transition. Status polls, reconciliation replies and proof replays log separate
+observation categories plus the fixed `financial_state`; they do not count as
+another payment, rejection or unknown outcome. Unpaid result access uses
+`result_payment_required`, separate from a new payment challenge.
+No job IDs, payer/nonce, proofs,
 secrets, options, content, filename or content hash enter logs. Request error
 responses are fixed codes, never parser/provider diagnostics. The executable
 bounds pre-header connections as well as active requests and job resources.

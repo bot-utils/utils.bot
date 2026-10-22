@@ -70,6 +70,7 @@ func acceptGzip(v string) bool {
 }
 func (s *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	status, category, route := 500, "service_failure", "unknown"
+	observedFinancial := ""
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Prototype", "local-synthetic-no-funds")
@@ -80,7 +81,11 @@ func (s *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			send(w, 503, map[string]string{"error": "flow_unavailable"})
 		}
 		if s.Logger != nil {
-			s.Logger.Info("csv flow", "route", route, "status", status, "category", category)
+			fields := []any{"route", route, "status", status, "category", category}
+			if observedFinancial != "" {
+				fields = append(fields, "financial_state", observedFinancial)
+			}
+			s.Logger.Info("csv flow", fields...)
 		}
 	}()
 	reject := func(err error) {
@@ -106,8 +111,16 @@ func (s *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if code == "payment_owner_mismatch" || code == "payment_binding_mismatch" || code == "payment_expired" {
 			category = "verified_proof_rejected"
 		}
-		if code == "payment_unknown" || code == "settlement_pending" {
-			category = code
+		if code == "payment_unknown" {
+			category = "payment_state_blocked"
+			observedFinancial = "PAYMENT_UNKNOWN"
+		}
+		if code == "settlement_pending" {
+			category = "payment_state_blocked"
+			observedFinancial = "SETTLEMENT_PENDING"
+		}
+		if code == "result_unpaid" {
+			category = "result_payment_required"
 		}
 		send(w, status, map[string]string{"error": code})
 	}
@@ -282,7 +295,8 @@ func (s *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			w.Header().Set("Retry-After", "1")
 			status = 200
-			category = financialCategory(result)
+			category = "job_status"
+			observedFinancial = result.Financial
 			send(w, 200, result)
 			return
 		}
@@ -311,7 +325,8 @@ func (s *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				proof := r.Header.Get("Payment-Signature")
 				if proof == "" {
 					if existing, err := s.Engine.Status(id, cap); err == nil && existing.Financial == "PAID" {
-						category = "confirmed_paid"
+						category = "payment_observation"
+						observedFinancial = existing.Financial
 						status = 200
 						send(w, 200, existing)
 						return
@@ -326,22 +341,24 @@ func (s *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					send(w, 402, challenge)
 					return
 				}
+				prior, _ := s.Engine.Status(id, cap)
 				result, err := s.Engine.Pay(r.Context(), id, cap, proof)
 				if err != nil {
 					reject(err)
 					return
 				}
 				status = 200
-				category = "provider_attempt"
+				category = "payment_response"
+				observedFinancial = result.Financial
+				if prior.Financial != "AWAITING_PAYMENT" {
+					category = "payment_replay"
+				}
 				if result.Financial == "PAYMENT_UNKNOWN" || result.Financial == "SETTLEMENT_PENDING" {
 					status = 202
-					category = financialCategory(result)
-				} else if result.Financial == "PAID" {
-					category = "confirmed_paid"
 				} else if result.Code == "payment_rejected" {
 					status = 402
-					category = "definitive_rejection"
 				}
+
 				send(w, status, result)
 				return
 			case "reconcile":
@@ -356,7 +373,8 @@ func (s *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				status = 200
-				category = financialCategory(result)
+				category = "reconciliation_response"
+				observedFinancial = result.Financial
 				send(w, 200, result)
 				return
 			case "ack":

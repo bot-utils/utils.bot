@@ -118,7 +118,8 @@ func (e *Engine) Pay(ctx context.Context, id, cap, proof string) (Status, error)
 	return e.Status(id, cap)
 }
 func (e *Engine) recordOutcome(id, reservationID, outcome string, reconciled bool) error {
-	return e.Store.tx(true, func(d *database) error {
+	previous, current := "", ""
+	err := e.Store.tx(true, func(d *database) error {
 		j := d.Jobs[id]
 		if j == nil || j.Reservation == nil || j.Reservation.ID != reservationID {
 			return fail(409, "reservation_conflict")
@@ -126,6 +127,8 @@ func (e *Engine) recordOutcome(id, reservationID, outcome string, reconciled boo
 		if j.Financial == "PAID" || j.Reservation.Outcome == "UNPAID" {
 			return nil
 		}
+		previous = j.Financial
+		defer func() { current = j.Financial }()
 		now := e.now()
 		switch outcome {
 		case "PAID":
@@ -164,6 +167,14 @@ func (e *Engine) recordOutcome(id, reservationID, outcome string, reconciled boo
 		}
 		return nil
 	})
+	if err == nil && previous != "" && current != previous && e.Logger != nil {
+		route := "job_payment"
+		if reconciled {
+			route = "payment_reconcile"
+		}
+		e.Logger.Info("csv flow", "route", route, "category", financialCategory(Status{Financial: current, Code: "payment_rejected"}), "financial_state", current, "status", 200)
+	}
+	return err
 }
 func (e *Engine) Reconcile(ctx context.Context, id, cap string) (Status, error) {
 	var reservationID string

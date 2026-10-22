@@ -334,11 +334,7 @@ func TestHTTPPendingUnknownNeverReportsUnpaidOrStartsDownload(t *testing.T) {
 			if w.Code != 200 || decoded[Status](t, w).Financial != financial {
 				t.Fatal("status lost financial state")
 			}
-			expected := "payment_unknown"
-			if financial == "SETTLEMENT_PENDING" {
-				expected = "settlement_pending"
-			}
-			if !strings.Contains(logs.String(), `"category":"`+expected+`"`) || strings.Contains(logs.String(), "result_unpaid") {
+			if !strings.Contains(logs.String(), `"financial_state":"`+financial+`"`) || !strings.Contains(logs.String(), `"category":"payment_state_blocked"`) || strings.Contains(logs.String(), "result_unpaid") {
 				t.Fatal("financial logs mislabeled")
 			}
 			s, _ := f.e.Status(a.JobID, a.Capability)
@@ -375,7 +371,7 @@ func TestHTTPReconciliationFinancialCategories(t *testing.T) {
 			if fault == "rejected-reply-lost" {
 				expected = "definitive_rejection"
 			} else if fault == "no-provider-call" {
-				expected = "payment_unknown"
+				expected = "reconciliation_response"
 			}
 			if !strings.Contains(logs.String(), `"category":"`+expected+`"`) {
 				t.Fatal("reconciliation misclassified", logs.String())
@@ -438,5 +434,44 @@ func TestHTTPPaymentSyntaxSignatureAndVerifiedRejectionAreDistinct(t *testing.T)
 				t.Fatal("payment outcome misclassified", w.Code, logs.String())
 			}
 		})
+	}
+}
+
+func TestPaymentEventsAreNotRepeatedByPollingOrProofReplay(t *testing.T) {
+	f := setup(t)
+	a, p := f.prepared()
+	var logs bytes.Buffer
+	h := NewHTTP(f.e, true, slog.New(slog.NewJSONHandler(&logs, nil)))
+	headers := map[string]string{"X-Job-Capability": a.Capability, "Payment-Signature": p}
+	path := "/csv/jobs/" + a.JobID
+	for n := 0; n < 4; n++ {
+		w := request(t, h, "POST", path+"/payment", struct{}{}, headers)
+		if w.Code != 200 {
+			t.Fatal(w.Code)
+		}
+		w = request(t, h, "GET", path, nil, headers)
+		if w.Code != 200 {
+			t.Fatal(w.Code)
+		}
+	}
+	delete(headers, "Payment-Signature")
+	for n := 0; n < 3; n++ {
+		w := request(t, h, "POST", path+"/payment", struct{}{}, headers)
+		if w.Code != 200 {
+			t.Fatal(w.Code)
+		}
+	}
+	if strings.Count(logs.String(), `"category":"provider_attempt"`) != 1 || strings.Count(logs.String(), `"category":"confirmed_paid"`) != 1 || !strings.Contains(logs.String(), `"category":"job_status","financial_state":"PAID"`) || !strings.Contains(logs.String(), `"category":"payment_replay"`) {
+		t.Fatal("poll/replay inflated financial events", logs.String())
+	}
+}
+func TestResultUnpaidHasDistinctAccessCategory(t *testing.T) {
+	f := setup(t)
+	a, _ := f.prepared()
+	var logs bytes.Buffer
+	h := NewHTTP(f.e, true, slog.New(slog.NewJSONHandler(&logs, nil)))
+	w := request(t, h, "GET", "/csv/jobs/"+a.JobID+"/result.gz", nil, map[string]string{"X-Job-Capability": a.Capability})
+	if w.Code != 402 || !strings.Contains(logs.String(), `"category":"result_payment_required"`) || strings.Contains(logs.String(), `"category":"definitive_rejection"`) {
+		t.Fatal("result access request misclassified")
 	}
 }
