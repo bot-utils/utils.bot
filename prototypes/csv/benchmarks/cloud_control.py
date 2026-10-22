@@ -17,6 +17,7 @@ from pathlib import Path
 import cloud_network
 import cloud_smoke
 import network_costs
+import network_admission
 import runtime_plan
 
 NAME = runtime_plan.NAME
@@ -146,6 +147,38 @@ class Ledger:
                      'controller_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()})
         state['cleanup_confirmed'] = False
         state['workers_termination_confirmed'] = False
+        self.state, self.etag = state, result['ETag']
+        self.save()
+
+
+    def review_late_glue_cleanup(self, plan, snapshot, expected, revision):
+        """Continue the last unattempted tier after verified delayed ENI release."""
+        if self.state is not None or not re.fullmatch(r'[0-9a-f]{40}', revision):
+            raise TrialFailure('invalid_recovery_review')
+        if (expected.get('account_id') != ACCOUNT or
+                expected.get('vpc_id') != 'vpc-05be93e77ca1e1d3d' or
+                expected.get('subnet_id') != 'subnet-0d1659853364bcb35' or
+                network_admission.phase_one_failures(snapshot, expected)):
+            raise TrialFailure('late_cleanup_not_proven')
+        path = self.directory / 'late-cleanup-readback.json'
+        result = self.aws.call('s3api', 'get-object', '--bucket', BUCKET, '--key', KEY, str(path))
+        state = json.loads(path.read_text())
+        jobs = state.get('jobs', [])
+        wanted = [task['family'] for task in plan['task_definitions']] + [plan['glue_jobs'][0]['Name']]
+        if (state.get('phase') != 'failed_or_uncertain' or len(jobs) != 5 or
+                [job['label'] for job in jobs] != wanted or
+                any(not job.get('id') for job in jobs) or
+                [job['state'] for job in jobs] != ['failed_terminal_reviewed', 'verified', 'verified', 'verified', 'submitted'] or
+                jobs[-1].get('provider_terminal') != 'SUCCEEDED' or
+                state.get('workers_termination_confirmed') is not True or
+                state.get('late_cleanup_review') or
+                state.get('plan_sha256') != hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()):
+            raise TrialFailure('late_cleanup_scope_mismatch')
+        validated_message([cloud_smoke.MARKER + json.dumps(jobs[-1]['metrics'])], 'glue')
+        jobs[-1].update(state='verified', late_cleanup_confirmed=True)
+        state.update(phase='claimed', workers_termination_confirmed=False, cleanup_confirmed=False,
+                     late_cleanup_review={'revision': revision, 'checked_at': snapshot['checked_at'],
+                     'scope': 'same lease; preserve five attempts; dispatch only Glue large'})
         self.state, self.etag = state, result['ETag']
         self.save()
 
@@ -424,7 +457,7 @@ class Controller:
                 self.wait(job, wanted)
                 job['metrics'] = self.metrics(job, wanted)
                 # Provider termination can precede release of a Glue ENI.
-                deadline = self.clock() + 180
+                deadline = self.clock() + 600
                 while True:
                     try:
                         self.workers_absent()
