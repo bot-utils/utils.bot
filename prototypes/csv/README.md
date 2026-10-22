@@ -218,3 +218,19 @@ privacy and recovery; and integrate the existing payment contract without extra
 charges on uncertain retries. Local byte reduction is only one feasibility metric.
 
 Optional fixed-schema synthetic backend diagnostics and pinned-rate cost calculations are in [benchmarks](benchmarks/). They are separate from the HTTP prototype and contain no cloud job dispatcher.
+
+The cloud smoke runner uses only fixed synthetic 1 MiB inputs and checks dedupe,
+join and aggregate against an independent oracle. A dependency-free wheel lets
+Glue run the same sources without downloading packages. The runtime request
+builder defines four separate Fargate tiers and two Glue tiers in the isolated
+trial network, with private storage and no credentials in a Fargate task role.
+These files prepare a comparison; they do not provision or start jobs.
+
+The worker supervisor bounds execution to 15 minutes and discards worker stderr.
+It emits only validated metrics, source hashes and a synthetic-workload label.
+Scratch uses disposable provider storage; terminal job state must be confirmed
+separately. A passing worker does not prove cloud cleanup, billing, large-file
+capacity or production isolation. Glue still has a service identity. Runtime IAM,
+a serial crash-safe controller, live admission checks and paid endpoint cleanup
+remain required before cloud execution. Existing shared log-group settings are
+preserved. No CSV routes are publicly released by this benchmark preparation.
