@@ -21,6 +21,10 @@ license files; the list below is not a complete license inventory.
   module; it reuses the existing SDK core, signing and transport packages. No
   browser automation framework, JavaScript runtime package or new general
   purpose HTTP/JSON dependency is introduced.
+- The unlaunched CSV adapters add pinned AWS SDK ECS `v1.102.0` and SQS
+  `v1.52.5` service modules and reuse the existing SDK core `v1.47.3`, S3,
+  DynamoDB and x402 dependencies. No additional data-processing engine or
+  general HTTP client library is introduced.
 - The AWS SDK, CDK and Swagger UI include components distributed under Apache
   2.0; preserve the required license and notice materials.
 - Native runtime inputs also include Expat, FreeType, zlib, Fontconfig,
