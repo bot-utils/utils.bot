@@ -489,3 +489,60 @@ func TestGenericReplacementCannotBypassNonceReservation(t *testing.T) {
 		t.Fatal("settlement bypassed atomic nonce transaction", e)
 	}
 }
+
+func TestGenericReplacementCannotResolveOrAlterUnknownEvidence(t *testing.T) {
+	s, r, j, client, p, _ := paymentFixture(t)
+	q, _ := s.ResultQuote(ctx, j.ID)
+	p.lost = true
+	if _, e := s.Settle(ctx, j.ID, sign(t, s, q, client)); e != nil {
+		t.Fatal(e)
+	}
+	old := readJob(t, r, j.ID)
+	store := r.Client.(*memoryDynamo)
+	writes := len(store.transactions)
+	for _, state := range []string{"PAID", "UNPAID"} {
+		n := copyJob(old)
+		n.Version++
+		n.Financial = state
+		n.Settlement.State = state
+		if state == "PAID" {
+			n.Artifact = "RETRIEVABLE"
+			n.Settlement.Transaction = "0x" + ID()
+		} else {
+			n.Artifact = "DELETING"
+		}
+		if !n.valid() {
+			t.Fatal("fixture must isolate generic financial fence", state)
+		}
+		if e := r.Replace(ctx, old, n); e != ErrInvalid {
+			t.Fatal("generic replacement resolved payment", state, e)
+		}
+	}
+	changed := copyJob(old)
+	changed.Version++
+	changed.Settlement.Transaction = "0x" + ID()
+	if e := r.Replace(ctx, old, changed); e != ErrInvalid {
+		t.Fatal("generic replacement changed settlement evidence", e)
+	}
+	if len(store.transactions) != writes {
+		t.Fatal("forbidden resolution reached DynamoDB")
+	}
+	paid := copyJob(old)
+	paid.Financial = "PAID"
+	paid.Settlement.State = "PAID"
+	paid.Settlement.Transaction = ""
+	paid.Artifact = "RETRIEVABLE"
+	if paid.valid() {
+		t.Fatal("paid without transaction accepted")
+	}
+	chain := &fakeChain{outcome: Outcome{State: "PAID"}}
+	s.Chain = chain
+	if got, e := s.Reconcile(ctx, j.ID); e != ErrUnknown || got.Financial != "PAYMENT_UNKNOWN" {
+		t.Fatal("chain outcome without transaction promoted", e)
+	}
+	chain.outcome = Outcome{State: "UNPAID"}
+	got, e := s.Reconcile(ctx, j.ID)
+	if e != nil || got.Financial != "UNPAID" || got.Artifact != "DELETING" || chain.calls.Load() != 2 {
+		t.Fatal("dedicated chain nonpayment resolution", e)
+	}
+}

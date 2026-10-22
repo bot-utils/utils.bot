@@ -479,7 +479,7 @@ func TestDownloadReservationCASAndImmutableManifest(t *testing.T) {
 	n.Result = &m
 	n.Artifact = "RETRIEVABLE"
 	n.Financial = "PAID"
-	n.Settlement = &Settlement{ID: ID(), Nonce: "0x" + ID(), Payer: n.Owner, Receiver: "0x2222222222222222222222222222222222222222", Asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", Network: "eip155:8453", Amount: "12345", State: "PAID", Started: fixtureTime.Unix(), ValidBefore: fixtureTime.Unix() + 180}
+	n.Settlement = &Settlement{ID: ID(), Nonce: "0x" + ID(), Payer: n.Owner, Receiver: "0x2222222222222222222222222222222222222222", Asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", Network: "eip155:8453", Amount: "12345", State: "PAID", Transaction: "0x" + ID(), Started: fixtureTime.Unix(), ValidBefore: fixtureTime.Unix() + 180}
 	n.ResultUntil = fixtureTime.Unix() + 600
 	// Preexisting finalized state is a provider fixture, not a transition that
 	// callers may manufacture with generic Replace.

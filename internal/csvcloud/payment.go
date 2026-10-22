@@ -15,6 +15,8 @@ type JobRepository interface {
 	Get(context.Context, string) (*Job, error)
 	Replace(context.Context, Job, Job) error
 	ReserveSettlement(context.Context, Job, Settlement, string) (Job, error)
+	markUnknown(context.Context, Job, string) (Job, error)
+	resolveFinancial(context.Context, Job, Chain, int64) (Job, error)
 }
 type ResultVerifier interface {
 	VerifyResult(context.Context, Manifest) (Manifest, error)
@@ -160,16 +162,12 @@ func (s Payments) Settle(ctx context.Context, id, proof string) (*Job, error) {
 		s.event(ctx, ProviderSettleFailure)
 	}
 	s.event(ctx, PaymentUnknown)
-	next := copyJob(pending)
-	next.Version++
-	next.Financial = "PAYMENT_UNKNOWN"
-	next.Artifact = "QUARANTINED"
-	next.Settlement.State = "PAYMENT_UNKNOWN"
-	next.Settlement.UnknownAt = s.now().Unix()
+	transaction := ""
 	if providerErr == nil && receipt != nil && protocol.Hex(receipt.Transaction, 32) && string(receipt.Network) == q.Network && strings.EqualFold(receipt.Payer, j.Owner) {
-		next.Settlement.Transaction = strings.ToLower(receipt.Transaction)
+		transaction = strings.ToLower(receipt.Transaction)
 	}
-	if err = s.replace(ctx, pending, next); err != nil {
+	if _, err = s.Repo.markUnknown(ctx, pending, transaction); err != nil {
+		s.event(ctx, InfrastructureFailure)
 		return nil, ErrUnknown
 	}
 	// Provider success/submission alone never releases the artifact. The selected
@@ -199,37 +197,10 @@ func (s Payments) Reconcile(ctx context.Context, id string) (*Job, error) {
 			return nil, ErrUnknown
 		}
 	}
-	outcome, err := s.Chain.Lookup(ctx, *j.Settlement)
+	next, err := s.Repo.resolveFinancial(ctx, *j, s.Chain, s.now().Unix())
 	if err != nil {
 		s.event(ctx, InfrastructureFailure)
-		return j, ErrUnknown
-	}
-	if outcome.State == "PAYMENT_UNKNOWN" {
-		return j, nil
-	}
-	if outcome.State != "PAID" && outcome.State != "UNPAID" {
-		return j, ErrUnknown
-	}
-	next := copyJob(*j)
-	next.Version++
-	next.Financial = outcome.State
-	next.Settlement.State = outcome.State
-	if outcome.State == "PAID" {
-		next.Settlement.Transaction = outcome.Transaction
-		if next.Artifact == "ERASED" || next.Artifact == "DELETING" {
-			next.Remedy = true
-		} else if s.now().Unix() >= next.Settlement.UnknownAt+24*3600 {
-			next.Artifact = "DELETING"
-			next.Remedy = true
-		} else {
-			next.Artifact = "RETRIEVABLE"
-			next.ResultUntil = s.now().Add(30 * time.Minute).Unix()
-		}
-	} else {
-		next.Artifact = "DELETING"
-	}
-	if err = s.replace(ctx, *j, next); err != nil {
-		return nil, ErrUnknown
+		return j, err
 	}
 	if next.Financial == "PAID" {
 		s.event(ctx, PaymentFinalized)
@@ -250,13 +221,11 @@ func (s Payments) RecoverPending(ctx context.Context, id string) error {
 	if j.Financial != "SETTLEMENT_PENDING" {
 		return nil
 	}
-	next := copyJob(*j)
-	next.Version++
-	next.Financial = "PAYMENT_UNKNOWN"
-	next.Artifact = "QUARANTINED"
-	next.Settlement.State = "PAYMENT_UNKNOWN"
-	next.Settlement.UnknownAt = next.Settlement.Started
-	return s.replace(ctx, *j, next)
+	_, err = s.Repo.markUnknown(ctx, *j, "")
+	if err != nil {
+		s.event(ctx, InfrastructureFailure)
+	}
+	return err
 }
 
 // VerifyAdmission performs real signature/provider verification without settling

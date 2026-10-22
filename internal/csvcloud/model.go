@@ -245,5 +245,5 @@ func (x Settlement) valid(financial string) bool {
 	default:
 		return false
 	}
-	return x.State == financial && opaque(x.ID) && protocol.Hex(x.Nonce, 32) && protocol.Hex(x.Payer, 20) && protocol.Hex(x.Receiver, 20) && protocol.Hex(x.Asset, 20) && (x.Network == "eip155:8453" || x.Network == "eip155:84532") && x.StartBlock >= 0 && x.Started > 0 && x.ValidBefore > x.Started && x.UnknownAt >= 0 && validAmount(x.Amount) && (x.Transaction == "" || protocol.Hex(x.Transaction, 32))
+	return (x.State != "PAID" || protocol.Hex(x.Transaction, 32)) && x.State == financial && opaque(x.ID) && protocol.Hex(x.Nonce, 32) && protocol.Hex(x.Payer, 20) && protocol.Hex(x.Receiver, 20) && protocol.Hex(x.Asset, 20) && (x.Network == "eip155:8453" || x.Network == "eip155:84532") && x.StartBlock >= 0 && x.Started > 0 && x.ValidBefore > x.Started && x.UnknownAt >= 0 && validAmount(x.Amount) && (x.Transaction == "" || protocol.Hex(x.Transaction, 32))
 }
