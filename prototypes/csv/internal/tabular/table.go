@@ -208,6 +208,9 @@ func validEscapedUnicode(raw []byte) bool {
 }
 
 func exactFields(raw []byte, t reflect.Type) bool {
+	if t == reflect.TypeFor[json.RawMessage]() {
+		return true
+	} // Recursively checked by StrictJSON; schema checked by its consumer.
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
