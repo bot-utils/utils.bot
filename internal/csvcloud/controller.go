@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	d "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	et "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"regexp"
 	"strings"
 	"time"
@@ -61,6 +63,10 @@ func AssembleController(ctx context.Context, c ControllerConfig, data aws.Config
 		definition, dok := brokerRow["definition"].(*d.AttributeValueMemberS)
 		token, tok := brokerRow["token"].(*d.AttributeValueMemberS)
 		if !aok || !dok || !tok || arn.Value != c.Broker.TaskARN || definition.Value != c.Broker.Definition || token.Value != c.RunID || validateBrokerBinding(brokerRow, c) != nil {
+			return Controller{}, ErrConflict
+		}
+		fresh, err := a.ECS.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{TaskDefinition: aws.String(c.Broker.Definition)}, func(o *ecs.Options) { o.RetryMaxAttempts = 1 })
+		if err != nil || fresh == nil || validateBrokerDefinition(brokerRow, fresh.TaskDefinition) != nil {
 			return Controller{}, ErrConflict
 		}
 	} else if len(brokerRow) != 0 {
@@ -212,6 +218,19 @@ func validateBrokerBinding(row map[string]d.AttributeValue, c ControllerConfig) 
 	plan := RunPlan{RunID: c.RunID, JobID: c.JobID, Account: c.Account}
 	raw, _ := json.Marshal(plan.brokerRequest(get("definition"), get("subnet"), get("security_group")))
 	if get("parameters") != Hash(raw) {
+		return ErrConflict
+	}
+	return nil
+}
+
+func validateBrokerDefinition(row map[string]d.AttributeValue, definition *et.TaskDefinition) error {
+	expected, ok := row["definition_hash"].(*d.AttributeValueMemberS)
+	arn, aok := row["definition"].(*d.AttributeValueMemberS)
+	if !ok || !aok || definition == nil || aws.ToString(definition.TaskDefinitionArn) != arn.Value {
+		return ErrConflict
+	}
+	raw, e := json.Marshal(definition)
+	if e != nil || Hash(raw) != expected.Value {
 		return ErrConflict
 	}
 	return nil
