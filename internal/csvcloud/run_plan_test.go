@@ -259,3 +259,18 @@ func TestPrivateRunnerRejectsUnreviewedNetworkBeforeProviderCalls(t *testing.T) 
 		}
 	}
 }
+
+func TestControllerRechecksOriginalBrokerDefinitionHash(t *testing.T) {
+	review := BrokerReview{Worker: privateReview(), Image: privateReview().Image}
+	def, _ := review.Definition()
+	def.TaskDefinitionArn = aws.String("private:1")
+	raw, _ := json.Marshal(def)
+	row := map[string]d.AttributeValue{"definition": str("private:1"), "definition_hash": str(Hash(raw))}
+	if validateBrokerDefinition(row, &def) != nil {
+		t.Fatal("original rejected")
+	}
+	def.ContainerDefinitions[0].ReadonlyRootFilesystem = aws.Bool(false)
+	if validateBrokerDefinition(row, &def) != ErrConflict {
+		t.Fatal("definition drift accepted")
+	}
+}
