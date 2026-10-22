@@ -137,8 +137,9 @@ one row: count `"0"`, sum `"0"`, min/max `""` meaning no observation.
 ## POST /csv/transform
 
 Parts: `options`, `file`. Transform is prepared for the eventual CSV release;
-it is currently implemented only in this local prototype, at the common small-file
-limits above. It has not been deployed or validated on large files in Fargate.
+the HTTP prototype keeps the common small-file limits above. A separate synthetic
+streaming validation path reuses the same Go transformation logic and has passed
+1 GiB cases on ARM Fargate. The customer upload/job/payment path is not deployed.
 
 ```json
 {"column":"email","op":"lower"}
@@ -179,6 +180,48 @@ serialized-output byte and row caps apply to the complete result. Any row or
 output failure returns only a fixed error, with no partial result. Existing
 network-disabled worker, deadline, memory, cleanup and content-free logging rules
 apply. Transform does not make hostile text safe for a model or spreadsheet.
+
+## Streaming transform validation
+
+`internal/tabular/stream_transform.go` processes one record at a time and shares
+compiled options and cell transformations with the request-sized implementation.
+It bounds raw fields/records before the CSV decoder allocates them. Input, rows,
+logical output and encoded output have independent limits; callers must use
+private staging and discard partial bytes on any error.
+
+`cmd/csv-transform-trial/` is a synthetic-only validation binary, not a customer
+API. Its fixed golden Unicode cases include quoted newlines, empty cells, formula
+and instruction text, and unchanged columns. It stages deterministic gzip bytes,
+closes and syncs the encoder, independently checks the entire decompressed
+artifact, then renames the private staged result. It emits only bounded synthetic
+metrics. The selected ARM worker installs a process-wide Linux filter before
+reading data: sockets, io_uring, process execution/spawn and foreign descriptor
+acquisition are denied. This is defense in depth, not an arbitrary-code execution
+service or proof of the future credential-bearing transfer boundary.
+
+The local driver is `benchmarks/transform_local.py`; the separately leased cloud
+driver is `benchmarks/transform_control.py`. The old three-operation comparison
+and its ledger remain unchanged. All four operations passed synthetic 1 GiB ARM
+Fargate cases with byte-identical local/reference results; processing took 17–26
+seconds, excluding startup, fixture generation, independent verification and
+transfers. Fargate isolation, late expansion/output caps, OOM and cancellation
+were checked. Real ENOSPC passed locally in a small private tmpfs. The first
+cloud filesystem-full setup failed unverified and remains in its original ledger;
+a fresh cloud cohort passed explicitly injected ENOSPC handling. Physical
+exhaustion of the main Fargate disk is not claimed. No test fills the main task
+or host filesystem.
+
+AWS isolation and 1 GiB evidence cover the pre-correction worker image
+`sha256:fb60410f40aed070086dfb7cacdfd5ab638dc14338d50b394127927c3326c982`.
+The separate completion controls used pre-correction image
+`sha256:649de4bf1a1653adb4809f61e3ff098e389b904ae3c74b0d672bc2f86d3479e8`.
+The final seccomp TSYNC return-value correction in revision `636e906` has local
+Linux regression and rebuilt-worker isolation/failure-test evidence only; that
+corrected image was not rerun on Fargate. Validate the final production image's
+isolation on its actual runtime before release.
+
+Public release still requires upload/resume, durable jobs, payment/retrieval,
+pricing, monitoring and the shared production worker review.
 
 ## Errors
 
