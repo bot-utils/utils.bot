@@ -87,6 +87,7 @@ func TestCsvTrialNetworkDefaultsToNoPaidInterfaceEndpoints(t *testing.T) {
 	template := assertions.Template_FromStack(stack, nil)
 	template.ResourceCountIs(jsii.String("AWS::EC2::VPCEndpoint"), jsii.Number(1))
 	template.HasResourceProperties(jsii.String("AWS::EC2::VPCEndpoint"), map[string]any{"VpcEndpointType": "Gateway"})
+	template.HasResourceProperties(jsii.String("AWS::Route53Resolver::FirewallRuleGroupAssociation"), map[string]any{"Priority": 101})
 	outputs := (*template.ToJSON())["Outputs"].(map[string]any)
 	if outputs["TrialDefaultSecurityGroup"] == nil {
 		t.Fatal("must expose the exact default security group for preflight hardening")

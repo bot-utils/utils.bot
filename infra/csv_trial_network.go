@@ -131,16 +131,22 @@ func csvTrialNetworkStack(app awscdk.App, account, az, s3PrefixList string, paid
 		Type: jsii.String("AWS::Route53Resolver::FirewallRuleGroupAssociation"),
 		Properties: &map[string]interface{}{
 			"Name": "utils-bot-csv-trial", "Tags": tags, "VpcId": vpc.VpcId(),
-			"FirewallRuleGroupId": firewall.Ref(), "Priority": 100, "MutationProtection": "DISABLED",
+			"FirewallRuleGroupId": firewall.Ref(), "Priority": 101, "MutationProtection": "DISABLED",
 		},
 	})
 	association.AddDependency(firewall)
-	for name, value := range map[string]*string{
-		"TrialVpc": vpc.VpcId(), "TrialDefaultSecurityGroup": vpc.VpcDefaultSecurityGroup(), "TrialSubnet": (*vpc.IsolatedSubnets())[0].SubnetId(),
-		"FargateSecurityGroup": parser.SecurityGroupId(), "GlueSecurityGroup": glue.SecurityGroupId(),
-		"EndpointSecurityGroup": endpoints.SecurityGroupId(),
+	for _, output := range []struct {
+		name  string
+		value *string
+	}{
+		{"TrialVpc", vpc.VpcId()},
+		{"TrialDefaultSecurityGroup", vpc.VpcDefaultSecurityGroup()},
+		{"TrialSubnet", (*vpc.IsolatedSubnets())[0].SubnetId()},
+		{"FargateSecurityGroup", parser.SecurityGroupId()},
+		{"GlueSecurityGroup", glue.SecurityGroupId()},
+		{"EndpointSecurityGroup", endpoints.SecurityGroupId()},
 	} {
-		awscdk.NewCfnOutput(stack, jsii.String(name), &awscdk.CfnOutputProps{Value: value})
+		awscdk.NewCfnOutput(stack, jsii.String(output.name), &awscdk.CfnOutputProps{Value: output.value})
 	}
 	// No job may use the unused AWS default SG. A post-create hardening step
 	// must revoke both default rule sets and verify emptiness, using its exact

@@ -62,7 +62,7 @@ def baseline():
                 default_security_group=dict(GroupId=e['default_sg_id'], VpcId=e['vpc_id'], GroupName='default',
                                             IpPermissions=[], IpPermissionsEgress=[]),
                 default_sg_network_interfaces=[], firewall_config=dict(FirewallFailOpen='DISABLED'),
-                dns_association=dict(VpcId=e['vpc_id'], FirewallRuleGroupId=e['dns_group_id'], Status='COMPLETE', Priority=100),
+                dns_association=dict(VpcId=e['vpc_id'], FirewallRuleGroupId=e['dns_group_id'], Status='COMPLETE', Priority=101),
                 dns_rules=[dict(Action='ALLOW', Priority=100, FirewallDomainListId='allow', FirewallDomainRedirectionAction='INSPECT_REDIRECTION_DOMAIN'),
                            dict(Action='BLOCK', Priority=200, FirewallDomainListId='block', FirewallDomainRedirectionAction='INSPECT_REDIRECTION_DOMAIN', BlockResponse='NODATA')],
                 dns_domains={'allow': allowed, 'block': ['*']}, worker_security_groups=groups,
@@ -76,6 +76,10 @@ def baseline():
 class AdmissionTests(unittest.TestCase):
     def test_private_exact_binding_is_accepted(self):
         self.assertEqual(network_failures(baseline(), EXPECTED), [])
+
+    def test_reserved_association_priority_is_rejected(self):
+        row = baseline(); row['dns_association']['Priority'] = 100
+        self.assertIn('dns_allowlist_not_verified', network_failures(row, EXPECTED))
 
     def test_default_group_requires_exact_identity_empty_rules_and_no_attachments(self):
         for key, value in [('GroupId', 'sg-other'), ('VpcId', 'vpc-other'), ('IpPermissions', [{}]), ('IpPermissionsEgress', [{}])]:
