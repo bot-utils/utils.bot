@@ -71,7 +71,7 @@ def dns_rules_ok(snapshot, expected):
     association = snapshot['dns_association']
     if (association.get('VpcId') != expected['vpc_id'] or
             association.get('FirewallRuleGroupId') != expected['dns_group_id'] or
-            association.get('Status') != 'COMPLETE' or association.get('Priority') != 100):
+            association.get('Status') != 'COMPLETE' or association.get('Priority') != 101):
         return False
     rules = sorted(snapshot['dns_rules'], key=lambda r: r['Priority'])
     if len(rules) != 2:
