@@ -43,10 +43,13 @@ a blind completion retry. Stale events cannot manufacture verified input state. 
 financial transition maps reject skipped states. Input identities, byte counts
 and hashes remain frozen; only upload-acceptance ETags may advance. Settlement
 states are closed enums consistent with the financial state. Generic database
-replacement cannot change financial state or settlement evidence. Dedicated
-package-private operations publish prepared results, reserve attempts and record
-uncertainty; the resolution operation calls the trusted chain reader itself and
-requires a transaction hash for PAID.
+replacement is limited to challenge updates and marking deletion. It cannot
+change input, result, dispatch, download or settlement evidence, financial state
+or deadlines. Dedicated operations accept uploads, reserve work, publish verified
+results, manage download leases and record uncertainty. The package-private
+resolution operation calls the trusted chain reader itself and requires a
+transaction hash for PAID. Queued/running states require the corresponding
+dispatch record; prepared results must be awaiting payment or pending settlement.
 
 The queue transaction commits the job, a single-use outbox and a cumulative cost
 reservation. Duplicate sends/receives cannot create a second automatic ECS start.

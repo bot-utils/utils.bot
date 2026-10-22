@@ -2,9 +2,10 @@ package csvcloud
 
 import (
 	"context"
+	"strings"
+
 	d "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"pdfservice/internal/protocol"
-	"strings"
 )
 
 // These persistence operations are package-private. Generic Replace cannot
