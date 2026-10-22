@@ -32,6 +32,7 @@ func TestDockerActualWorkerAndCleanup(t *testing.T) {
 	for _, j := range []Job{
 		{Operation: "dedupe", Options: json.RawMessage(`{"key_columns":["id"],"keep":"last"}`), Inputs: map[string][]byte{"file": []byte("id,v\nx,old\nx,new\n")}},
 		{Operation: "join", Options: json.RawMessage(`{"left_key_columns":["id"],"right_key_columns":["key"],"type":"anti"}`), Inputs: map[string][]byte{"left": []byte("id\na\nb\n"), "right": []byte("key\na\n")}},
+		{Operation: "transform", Options: json.RawMessage(`{"column":"v","op":"upper"}`), Inputs: map[string][]byte{"file": []byte("id,v\nx,hello\n")}},
 		{Operation: "aggregate", Options: json.RawMessage(`{"metrics":[{"name":"sum","op":"sum","column":"amount"}]}`), Inputs: map[string][]byte{"file": []byte("amount\n0.1\n0.2\n")}},
 	} {
 		r, e := d.Run(context.Background(), j)
@@ -128,6 +129,28 @@ func TestDockerTimeoutCancellationAndMemoryKill(t *testing.T) {
 	_, e := d.run(ctx, Job{}, "--probe-memory")
 	if e == nil || e.Error() != "worker_memory_limit" {
 		t.Fatal("memory cap did not fail closed", e)
+	}
+	assertNoJobs(t)
+}
+
+func TestDockerTransformContractsAndAtomicFailure(t *testing.T) {
+	d := dockerTests(t)
+	for _, tc := range []struct{ opts, want string }{
+		{`{"column":"v","op":"trim"}`, "HeLLo"},
+		{`{"column":"v","op":"lower"}`, "  hello  "},
+		{`{"column":"v","op":"upper"}`, "  HELLO  "},
+		{`{"column":"v","op":"replace","old":"L","new":"$1"}`, "  He$1$1o  "},
+	} {
+		r, e := d.Run(context.Background(), Job{Operation: "transform", Options: json.RawMessage(tc.opts), Inputs: map[string][]byte{"file": []byte("id,v\n01,  HeLLo  \n")}})
+		if e != nil || len(r.Rows) != 1 || r.Rows[0][0] != "01" || r.Rows[0][1] != tc.want {
+			t.Fatal(r, e)
+		}
+		assertNoJobs(t)
+	}
+	raw, _ := json.Marshal(map[string]string{"column": "v", "op": "replace", "old": "x", "new": strings.Repeat("y", 1024)})
+	r, e := d.Run(context.Background(), Job{Operation: "transform", Options: raw, Inputs: map[string][]byte{"file": []byte("v\nx\n" + strings.Repeat("x", 17) + "\n")}})
+	if e == nil || e.Error() != "cell_limit" || r.Rows != nil {
+		t.Fatal("partial or oversized result", r, e)
 	}
 	assertNoJobs(t)
 }

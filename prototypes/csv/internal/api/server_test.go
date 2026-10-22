@@ -55,6 +55,7 @@ func TestMultipartOperationsNeverSpillOrLogCustomerData(t *testing.T) {
 	}{
 		{"/csv/dedupe", `{"key_columns":["PRIVATE_HEADER"],"keep":"first"}`, map[string]string{"file": "PRIVATE_HEADER,value\nPRIVATE_KEY,PRIVATE_CONTENT\nPRIVATE_KEY,other\n"}, 1},
 		{"/csv/join", `{"left_key_columns":["PRIVATE_HEADER"],"right_key_columns":["PRIVATE_HEADER"],"type":"anti"}`, map[string]string{"left": "PRIVATE_HEADER\nPRIVATE_KEY\n", "right": "PRIVATE_HEADER\nother\n"}, 1},
+		{"/csv/transform", `{"column":"PRIVATE_HEADER","op":"replace","old":"PRIVATE_KEY","new":"PRIVATE_REPLACEMENT"}`, map[string]string{"file": "PRIVATE_HEADER,value\nPRIVATE_KEY,PRIVATE_CONTENT\n"}, 1},
 		{"/csv/aggregate", `{"metrics":[{"name":"total","op":"sum","column":"PRIVATE_HEADER"}]}`, map[string]string{"file": "PRIVATE_HEADER\n0.1\n0.2\n"}, 1},
 	}
 	for _, tc := range tests {
@@ -109,6 +110,8 @@ func TestRejectedInputsAndPrivacySafeErrors(t *testing.T) {
 		{"/csv/dedupe", `{"key_columns":["PRIVATE_COL"],"keep":"first"}`, map[string]string{"file": "id\nx\n"}, 422, "invalid_columns"},
 		{"/csv/dedupe", `{"key_columns":["id"],"keep":"first","instruction":"PRIVATE_INSTRUCTION"}`, map[string]string{"file": "id\nx\n"}, 400, "invalid_options"},
 		{"/csv/dedupe?PRIVATE_TOKEN=1", valid, map[string]string{"file": "id\nx\n"}, 400, "noncanonical_url"},
+		{"/csv/transform", `{"column":"id","op":"PRIVATE_CODE"}`, map[string]string{"file": "id\nPRIVATE_VALUE\n"}, 422, "invalid_transform"},
+		{"/csv/transform", `{"column":"id","op":"replace","old":"PRIVATE_OLD"}`, map[string]string{"file": "id\nPRIVATE_VALUE\n"}, 400, "invalid_options"},
 		{"/private-path", valid, map[string]string{"file": "id\nx\n"}, 404, "not_found"},
 		{"/csv/dedupe", valid, map[string]string{"file": "id\n\"PRIVATE_BAD_VALUE"}, 400, "invalid_csv"},
 		{"/csv/dedupe", strings.Repeat("x", tabular.MaxOptions+1), map[string]string{"file": "id\nx\n"}, 413, "options_limit"},
@@ -267,5 +270,21 @@ func TestMultipartEpilogueIsIgnoredAndBoundedBeforeWorker(t *testing.T) {
 	s.ServeHTTP(w, r)
 	if w.Code != 413 || called || !strings.Contains(w.Body.String(), "request_limit") {
 		t.Fatal("oversized epilogue reached worker", w.Code, called, w.Body.String())
+	}
+}
+
+func TestTransformWorkerReplyMustPreserveRowCount(t *testing.T) {
+	r := tabular.Result{Operation: "transform", Columns: []string{"id"}, Rows: [][]string{{"x"}}, InputRows: map[string]int{"file": 1}, OutputRows: 1}
+	if !validResult("transform", r) {
+		t.Fatal("valid transform reply refused")
+	}
+	r.InputRows["file"] = 2
+	if validResult("transform", r) {
+		t.Fatal("transform silently dropped rows")
+	}
+	for _, e := range []*tabular.Error{{Code: "invalid_transform", Status: 422}, {Code: "transform_unavailable", Status: 503}} {
+		if !knownError(e) {
+			t.Fatal("fixed transform error refused")
+		}
 	}
 }

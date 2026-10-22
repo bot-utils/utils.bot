@@ -1,7 +1,9 @@
-# CSV tools: agreed specification and local prototype
+# CSV tools: specification and local prototype
 
-**Status:** Engineering and Product Owner agreed this contract for a local,
-unpaid prototype. These endpoints are not deployed or advertised by utils.bot.
+**Status:** Local, unpaid prototype. The original three-operation contract was
+agreed with Product Owner; transform was added to the eventual CSV release scope
+by the owner and its fixed-operation scope was reviewed with Product Owner.
+These endpoints are not deployed or advertised by utils.bot.
 The released PDF and URL tools are unaffected. No LLM interprets requests.
 
 ## Why an agent would call this
@@ -132,13 +134,59 @@ is rejected. Grouping columns precede metrics; groups follow first appearance.
 Header-only input with grouping returns zero rows. Without grouping it returns
 one row: count `"0"`, sum `"0"`, min/max `""` meaning no observation.
 
+## POST /csv/transform
+
+Parts: `options`, `file`. Transform is prepared for the eventual CSV release;
+it is currently implemented only in this local prototype, at the common small-file
+limits above. It has not been deployed or validated on large files in Fargate.
+
+```json
+{"column":"email","op":"lower"}
+```
+
+Choose one existing, uniquely named column and exactly one operation. All source
+columns and rows are returned in their original order, including empty cells.
+Headers and every other column are unchanged. Header-only input returns zero rows.
+There is no sequence of operations, inferred instruction or implicit type conversion.
+
+| Op | Exact behavior | Extra fields |
+| --- | --- | --- |
+| `trim` | Remove leading/trailing Unicode White_Space; preserve internal whitespace | Forbidden |
+| `lower` | Locale-independent Unicode simple lowercase mapping | Forbidden |
+| `upper` | Locale-independent Unicode simple uppercase mapping | Forbidden |
+| `replace` | Case-sensitive literal replacement of every nonoverlapping match, left to right | Required `old` and `new` strings |
+
+```json
+{"column":"status","op":"replace","old":"pending","new":"queued"}
+```
+
+Unicode behavior is pinned to version **15.0.0**. Trim removes U+0009–000D,
+0020, 0085, 00A0, 1680, 2000–200A, 2028, 2029, 202F, 205F and 3000.
+Zero-width space U+200B and BOM U+FEFF within a cell are preserved. Casing has
+no locale/context rules, normalization or multi-character expansion: `ß` remains
+`ß` under upper, and `Σ` becomes `σ` under lower. A Unicode-table upgrade requires
+review; a mismatched worker returns `transform_unavailable` rather than silently
+changing semantics.
+
+Both replacement strings are limited to 1,024 UTF-8 bytes; `old` must be nonempty,
+while empty `new` deletes matches. NUL is forbidden. Replacement text is literal:
+`$1`, backslashes, formulas and instructions are data; inserted text is not
+searched again. Regex, SQL, code, URLs, expressions and extra fields are rejected.
+
+The 16,384-byte cell cap also applies after transformation, including UTF-8 case
+expansion. Replacement expansion is checked before allocating it. The common
+serialized-output byte and row caps apply to the complete result. Any row or
+output failure returns only a fixed error, with no partial result. Existing
+network-disabled worker, deadline, memory, cleanup and content-free logging rules
+apply. Transform does not make hostile text safe for a model or spreadsheet.
+
 ## Errors
 
 | HTTP | Meaning / example codes |
 | --- | --- |
 | 400 | Malformed request/CSV/options: `invalid_csv`, `invalid_options`, `invalid_parts` |
 | 413 | Size, rows, groups or expansion bound: `file_limit`, `join_pair_limit`, `worker_memory_limit` |
-| 422 | Invalid operation/schema/data or decimal precision: `invalid_columns`, `invalid_decimal`, `decimal_range`, `output_column_collision` |
+| 422 | Invalid operation/schema/data or decimal precision: `invalid_columns`, `invalid_decimal`, `decimal_range`, `invalid_transform`, `output_column_collision` |
 | 429 | Local job already admitted: `capacity_unavailable` with Retry-After |
 | 503 | Missing worker image/runtime, invalid worker reply or unconfirmed cleanup |
 | 504 | Worker deadline reached: `worker_timeout` |
@@ -196,7 +244,7 @@ go test ./internal/tabular -run '^$' -bench . -benchtime=3x -benchmem
 ```
 
 The build uses a minimal context containing only the compiled worker and Dockerfile.
-The demo generates synthetic data in memory and exercises all three real HTTP
+The demo generates synthetic data in memory and exercises all four real HTTP
 endpoints, including a 50,000-row aggregate; it prints responses and byte reduction.
 Docker integration tests verify real nonroot/network/read-only/cgroup controls,
 absence of inherited canary credentials, exact arithmetic, cleanup, cancellation,
