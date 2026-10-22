@@ -260,11 +260,10 @@ func (p Processor) Recover(ctx context.Context, id string) error {
 	if p.Worker.StopAndVerify(ctx, *j.Dispatch) != nil {
 		return ErrCleanup
 	}
-	// This fence additionally covers broker S3 writes already in flight and all
-	// upload capabilities. A timeout alone is never proof of stopped writers.
-	if p.RecoveryFence.VerifyStopped(ctx, *j) != nil {
-		return ErrCleanup
-	}
+	// Mark DELETING under CAS before the full writer fence. This retains
+	// capacity and prevents publication; Cleanup performs the independent broker/
+	// upload fence immediately before erasure, without repeating a slow seal.
+
 	if j.Artifact != "DELETING" {
 		n := copyJob(*j)
 		n.Version++

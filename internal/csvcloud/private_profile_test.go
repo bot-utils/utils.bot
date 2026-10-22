@@ -11,7 +11,7 @@ import (
 func privateReview() WireReview {
 	run := strings.Repeat("a", 64)
 	account := "123456789012"
-	return WireReview{Account: account, RunID: run, Image: account + ".dkr.ecr.us-east-2.amazonaws.com/utils-bot-csv-private@sha256:" + strings.Repeat("b", 64), ExecutionRole: "arn:aws:iam::" + account + ":role/utils-bot-csv-private-" + run[:16] + "-execution", SecretARN: "arn:aws:ssm:us-east-2:" + account + ":parameter/utils-bot/csv-private/" + run + "/tls", SyntheticOnly: true}
+	return WireReview{Account: account, RunID: run, Image: account + ".dkr.ecr.us-east-2.amazonaws.com/utils-bot-csv-private@sha256:" + strings.Repeat("b", 64), ExecutionRole: "arn:aws:iam::" + account + ":role/utils-bot-csv-private-" + run[:16] + "-worker-execution", SecretARN: "arn:aws:ssm:us-east-2:" + account + ":parameter/utils-bot/csv-private/" + run + "/tls", SyntheticOnly: true}
 }
 func TestPrivateDefinitionRejectsSecurityDrift(t *testing.T) {
 	w := privateReview()

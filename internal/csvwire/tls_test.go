@@ -42,16 +42,17 @@ func identities(t *testing.T) ([]byte, *tls.Config) {
 		key, _ := x509.MarshalECPrivateKey(k)
 		return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: v}), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: key}), v
 	}
-	server, key, _ := makeCert(false)
+	server, key, serverDER := makeCert(false)
 	client, ck, clientDER := makeCert(true)
-	cert, _ := tls.X509KeyPair(client, ck)
-	roots := x509.NewCertPool()
-	roots.AppendCertsFromPEM(caPEM)
 	raw, _ := json.Marshal(Bootstrap{Certificate: string(server), PrivateKey: string(key), ClientCA: string(caPEM), PeerSHA256: hash(clientDER)})
 	if len(raw) > 4096 {
 		t.Fatal("SSM standard parameter bound")
 	}
-	return raw, &tls.Config{MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13, RootCAs: roots, ServerName: "csv-worker", Certificates: []tls.Certificate{cert}, NextProtos: []string{Protocol}}
+	clientConfig, e := ClientTLS(Bootstrap{Certificate: string(client), PrivateKey: string(ck), ClientCA: string(caPEM), PeerSHA256: hash(serverDER)}, now)
+	if e != nil {
+		t.Fatal(e)
+	}
+	return raw, clientConfig
 }
 func TestOneJobMTLSFramedSession(t *testing.T) {
 	raw, client := identities(t)

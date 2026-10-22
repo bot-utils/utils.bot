@@ -129,3 +129,30 @@ func Exchange(ctx context.Context, c *tls.Conn, q Request, inputs map[string]io.
 	}
 	return ReadResult(c, sink)
 }
+
+// ClientTLS verifies the per-job server certificate, normal CA validation and
+// exact leaf pin. No server-selected origin, system roots or insecure mode.
+func ClientTLS(b Bootstrap, now time.Time) (*tls.Config, error) {
+	cert, e := tls.X509KeyPair([]byte(b.Certificate), []byte(b.PrivateKey))
+	if e != nil || len(cert.Certificate) != 1 || !digest(b.PeerSHA256) {
+		return nil, ErrWire
+	}
+	leaf, e := x509.ParseCertificate(cert.Certificate[0])
+	if e != nil || now.Before(leaf.NotBefore) || !now.Before(leaf.NotAfter) || leaf.NotAfter.After(now.Add(20*time.Minute)) {
+		return nil, ErrWire
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM([]byte(b.ClientCA)) {
+		return nil, ErrWire
+	}
+	return &tls.Config{MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13, RootCAs: roots, ServerName: "csv-worker", Certificates: []tls.Certificate{cert}, NextProtos: []string{Protocol}, SessionTicketsDisabled: true, VerifyConnection: func(s tls.ConnectionState) error {
+		if s.NegotiatedProtocol != Protocol || len(s.PeerCertificates) != 1 || len(s.VerifiedChains) == 0 {
+			return ErrWire
+		}
+		h := sha256.Sum256(s.PeerCertificates[0].Raw)
+		if hex.EncodeToString(h[:]) != b.PeerSHA256 {
+			return ErrWire
+		}
+		return nil
+	}}, nil
+}

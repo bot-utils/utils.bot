@@ -82,9 +82,18 @@ func (m *memoryDynamo) TransactWriteItems(_ context.Context, in *dynamodb.Transa
 			if aws.ToString(p.ConditionExpression) == "attribute_not_exists(pk)" && old != nil || aws.ToString(p.ConditionExpression) == "#v = :v" && avs(old["version"]) != avs(p.ExpressionAttributeValues[":v"]) {
 				return nil, &d.TransactionCanceledException{}
 			}
+		} else if v.ConditionCheck != nil {
+			check := v.ConditionCheck
+			old := m.rows[avs(check.Key["pk"])]
+			if aws.ToString(check.ConditionExpression) != "#v = :v" || avs(old["version"]) != avs(check.ExpressionAttributeValues[":v"]) {
+				return nil, &d.TransactionCanceledException{}
+			}
 		} else if v.Update != nil {
 			u := v.Update
 			old := m.rows[avs(u.Key["pk"])]
+			if u.ExpressionAttributeNames["#arn"] != "" && (old["task_arn"] != nil || avs(old["token"]) != avs(u.ExpressionAttributeValues[":token"]) || avs(old["parameters"]) != avs(u.ExpressionAttributeValues[":parameters"])) {
+				return nil, &d.TransactionCanceledException{}
+			}
 			field := "used"
 			if u.ExpressionAttributeNames["#reserved"] != "" {
 				field = "reserved"
@@ -124,6 +133,9 @@ func (m *memoryDynamo) TransactWriteItems(_ context.Context, in *dynamodb.Transa
 			}
 			if aws.ToString(u.UpdateExpression) == "REMOVE #binding" {
 				delete(m.rows[k], "binding")
+			}
+			if n := u.ExpressionAttributeValues[":arn"]; n != nil {
+				m.rows[k]["task_arn"] = n
 			}
 			if n := u.ExpressionAttributeValues[":next"]; n != nil {
 				m.rows[k]["state"] = n
