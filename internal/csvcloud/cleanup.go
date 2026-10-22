@@ -49,7 +49,13 @@ func (r Repository) erased(ctx context.Context, old Job) error {
 	if !old.valid() || old.Artifact != "DELETING" || old.DownloadLease != "" {
 		return ErrCleanup
 	}
-	next := Job{ID: old.ID, Version: old.Version + 1, Artifact: "ERASED", Financial: old.Financial, RecoveryVerifier: old.RecoveryVerifier, Settlement: old.Settlement, Remedy: old.Remedy}
+	financial := old.Financial
+	// A quoted, never-settled result is unpaid when its artifact is erased.
+	// Pending/unknown settlements must retain their reconciliation evidence.
+	if financial == "AWAITING_PAYMENT" && old.Settlement == nil {
+		financial = "UNPAID"
+	}
+	next := Job{ID: old.ID, Version: old.Version + 1, Artifact: "ERASED", Financial: financial, RecoveryVerifier: old.RecoveryVerifier, Settlement: old.Settlement, Remedy: old.Remedy}
 	if !next.valid() {
 		return ErrInvalid
 	}

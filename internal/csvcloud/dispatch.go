@@ -103,6 +103,7 @@ func (r Runner) request(j Job) *ecs.RunTaskInput {
 	request := &ecs.RunTaskInput{Cluster: aws.String(r.Cluster), TaskDefinition: aws.String(r.Definition), ClientToken: aws.String(j.Dispatch.Token), StartedBy: aws.String(j.Dispatch.Token[:32]), Group: aws.String("csv-" + j.Dispatch.Token), Count: aws.Int32(1), LaunchType: et.LaunchTypeFargate, PlatformVersion: aws.String("1.4.0"), NetworkConfiguration: &et.NetworkConfiguration{AwsvpcConfiguration: &et.AwsVpcConfiguration{Subnets: []string{r.Subnet}, SecurityGroups: []string{r.SecurityGroup}, AssignPublicIp: et.AssignPublicIpDisabled}}, Overrides: &et.TaskOverride{ContainerOverrides: []et.ContainerOverride{{Name: aws.String(r.Container), Command: []string{"--job", j.ID, "--dispatch", j.Dispatch.Token}}}}}
 	if r.Wire != nil {
 		request.Overrides = nil
+		request.Tags = []et.Tag{{Key: aws.String("CSVPrivateRun"), Value: aws.String(r.Wire.RunID)}, {Key: aws.String("CSVPrivateKind"), Value: aws.String("worker")}}
 	}
 	return request
 }
@@ -112,6 +113,9 @@ func (r Runner) request(j Job) *ecs.RunTaskInput {
 func (r Runner) Start(ctx context.Context, m Message) error {
 	if !r.Gate.Enabled || !r.Gate.Dispatch {
 		return ErrDisabled
+	}
+	if r.Wire != nil && !r.privateNetwork() {
+		return ErrInvalid
 	}
 	if !opaque(r.IsolationReview) || !strings.Contains(r.Definition, ":task-definition/") || !strings.Contains(r.Definition, ":") || r.Container == "" || r.Subnet == "" || r.SecurityGroup == "" {
 		return ErrInvalid
@@ -163,6 +167,9 @@ func (r Runner) Start(ctx context.Context, m Message) error {
 // Reconcile is read-only at ECS. No RunTask is called, even beyond ECS's token
 // idempotency horizon. Zero/multiple matches remain unknown/operator-reviewed.
 func (r Runner) Reconcile(ctx context.Context, id string) error {
+	if r.Wire != nil && !r.privateNetwork() {
+		return ErrInvalid
+	}
 	if !r.Gate.Enabled {
 		return ErrDisabled
 	}
@@ -241,4 +248,8 @@ func (r Runner) inspectDefinition(ctx context.Context) error {
 		return ErrInvalid
 	}
 	return nil
+}
+
+func (r Runner) privateNetwork() bool {
+	return r.Wire != nil && r.Subnet == privateTrialSubnet && r.SecurityGroup == privateTrialSecurityGroup && r.Cluster == "arn:aws:ecs:us-east-2:"+r.Wire.Account+":cluster/utils-bot-csv-trial"
 }

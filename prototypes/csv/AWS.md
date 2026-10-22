@@ -86,7 +86,8 @@ subnet and private endpoint. Lifecycle IAM must be exact-task and exact-cluster.
 Its `NetworkGone` dependency must use a separate short-lived verifier identity;
 there is deliberately no default using broker credentials. EC2 ENI read permission
 is region-wide metadata access, even when source queries only exact attachment
-IDs. External verifier transport, effective IAM, private broker/controller assembly,
+IDs. The source now supplies a separate local verifier executable, authenticated
+proof channel and private synthetic broker/controller assembly. Effective IAM,
 VPC/endpoint policies and actual Fargate kernel/runtime behavior remain preflight
 gates. A two-minute durable `TransferUntil` claim also survives a lost claim response
 or broker crash. Failed transfers move to `PROCESSING_UNKNOWN`. `Recover` handles
@@ -98,13 +99,77 @@ fence, erases both full job prefixes (including orphan results from ambiguous
 PutResult/final-CAS responses), and releases capacity only after fresh absence
 proof. Lost successful publication remains payment-eligible and is not erased as
 a failed unpaid transfer. Unknown writer/storage evidence retains capacity and
-requires bounded repeated recovery/operator attention. The external reaper must
-schedule from durable state; callback-only recovery is insufficient. Runner
+requires bounded repeated recovery/operator attention. The private reaper uses a durable scheduled record, three cleanup attempts,
+90-second claims and 45-second recovery callbacks. The record must exist before
+either task starts. Deploying or independently invoking its scheduler remains a
+preflight requirement; source entrypoints alone do not supply a running scheduler. Runner
 performs the broad read-only definition inspection before dispatch; LifecycleAPI
 contains only exact-task DescribeTasks/StopTask, not DescribeTaskDefinition.
 
-No production writer-fence implementation is supplied; cleanup cannot
-release capacity without an independent proof covering every writer/capability.
+No production writer-fence implementation is supplied. The new destructive
+fence is exclusively for one synthetic run, one job and its never-reused private
+unversioned bucket. It stops both original task ARNs and obtains signed ENI
+absence proofs. If the broker never started, a conditional `NEVER_STARTED`
+tombstone excludes a late broker start; a STARTING/ambiguous record instead
+requires exact-token reconciliation. Cleanup races with the broker's conditional
+start reservation and the job-version check.
+
+The first recovery phase checks privacy/ownership/encryption, rejects foreign
+objects and MPUs, erases the complete owned prefixes and requires a successful
+DeleteBucket reply. It records DELETED and yields. A later claimed recovery
+performs one independent absence convergence, records a short-lived CONFIRMED
+receipt and releases capacity only while that receipt remains fresh. The verifier
+requires at least 15 seconds of continuous explicit NoSuchBucket responses with
+bounded backoff and a 30-second limit. A 403, timeout, contradictory visibility
+or missing delete acknowledgement holds capacity for operator reconciliation.
+The local delayed-write model is not proof of AWS deletion propagation; the real
+late-PUT race remains an unrun cloud gate. Never reuse this bucket name.
+
+## Private synthetic run assembly
+
+The broker executable processes exactly one synthetic 1 MiB two-file join. It
+reads the immutable inputs, uses the per-job TLS channel and verifies the gzip
+result; it has no public route or payment/RPC client. Its task role can read this
+job's inputs, write its results, transact only its job/request rows, read signed
+proofs and stop/describe the exact original worker. It has no EC2 inspection,
+SSM read, AssumeRole, task-start or bucket-create permission. Worker and broker
+execution roles receive different exact SSM references. The credential-free
+parser remains separate from the broker and TLS transport.
+
+The independent verifier runs outside the broker task with short-lived read-only
+credentials. It independently observes the exact original STOPPED task and ENI,
+then signs proofs bound to run, job, task, nonce, interfaces and expiry. The broker
+can request/read a proof but cannot write it. The signing key travels through a
+private pipe, not environment or argv. Linux executes the verified open binary
+inode through fd3. Darwin uses an explicit owned, read-only binary in an owned
+0700 directory, with an immediate inode recheck; this is a host-account trust
+boundary, not a defense against compromise of that same host account.
+
+RunPlan durably binds pinned image digests, exact isolated subnet and task SG,
+a 10-minute run, a $10 conservative reservation and a two-hour resource lifetime.
+These are source admission bounds, not AWS-enforced spending caps. Lost RunTask
+responses consume the original attempt and are reconciled read-only; no retry or
+replacement token is allowed. The original broker request hash, definition hash,
+network and ARN are durable and checked again on controller assembly. An inspected,
+never-settled synthetic result may be explicitly retired without replaying work;
+pending, unknown or funded settlements are not eligible for this path.
+
+IAM policy documents stay in the operator conversation and are not generated as
+files. The temporary setup principal is trusted: direct role creation, image
+upload, family revision registration and task starts can bypass source preflight.
+Its cleanup StopTask grant covers tagged tasks in the isolated cluster, rather
+than just the two original ARNs. The actual broker role is exact-worker-ARN bound.
+The temporary recursive SSM path-read deny also affects this setup principal's
+unrelated recursive reads; existing live runtime roles are unchanged.
+
+Before any AWS task starts: validate the full effective IAM/trust, materialize and
+review the isolated network change set (private ECR API/DKR, SSM, ECS and DynamoDB
+endpoints, exact endpoint policies/DNS allowlist and task-to-task TLS rule), verify
+bucket protections before input upload, and arrange independent controller/reaper
+invocation and cleanup. No public CSV launch or funded settlement is authorized.
+Current source processing remains **8 MiB per input and 8 MiB CSV/gzip result**.
+The **1 GiB upload bound is not a validated processing capability**. That requires
+a separate streaming/spill architecture and scale tests.
 
 A result is conditionally stored as gzip. The adapter streams compressed and
 logical bytes, checks both byte counts and SHA-256 domains, validates gzip/CRC and
