@@ -78,6 +78,6 @@ func ProcessSyntheticBroker(ctx context.Context, b BrokerBootstrap, data aws.Con
 	pub, _ := base64.StdEncoding.DecodeString(b.NetworkPublicKey)
 	channel := NetworkChannel{Repo: repo, RunID: b.RunID, JobID: b.JobID, TaskARN: j.Dispatch.TaskARN, PublicKey: ed25519.PublicKey(pub)}
 	worker := PrivateWorker{Review: &b.Review, Client: clients.ECS, Verifier: channel, Cluster: b.Cluster, Definition: b.Definition, Subnet: b.Subnet, Prefix: netip.MustParsePrefix(b.Prefix), TLS: tlsConfig, Gate: Gate{Enabled: true}}
-	processor := Processor{Repo: repo, Objects: Storage{Client: clients.S3, Bucket: b.Bucket, Account: b.Account, Gate: Gate{Enabled: true}}, Worker: worker.Session(), Gate: Gate{Enabled: true}}
+	processor := Processor{Repo: repo, Objects: privateCandidateStorage{Storage{Client: clients.S3, Bucket: b.Bucket, Account: b.Account, Gate: Gate{Enabled: true}}}, Worker: worker.Session(), Gate: Gate{Enabled: true}, StageResults: true}
 	return processor.Process(ctx, b.JobID, b.Request)
 }

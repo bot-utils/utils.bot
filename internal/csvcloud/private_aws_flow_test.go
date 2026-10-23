@@ -387,6 +387,7 @@ func TestPrivateAWSFlow(t *testing.T) {
 			controller, e := AssembleController(ctx, scope, cfg, verifier)
 			if e == nil {
 				_ = controller.FulfilNetwork(ctx)
+				_ = controller.FinalizeCandidate(ctx)
 				current, err := repo.Get(ctx, job.ID)
 				if err == nil && current != nil && current.Artifact == "RESULT_PREPARED" {
 					if current.Financial != "AWAITING_PAYMENT" || current.Settlement != nil || !current.WorkerStopped || current.Result == nil || current.Result.LogicalSHA256 != Hash(expected) || current.Result.Rows != 1024 {

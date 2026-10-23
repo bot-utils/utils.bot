@@ -2,6 +2,7 @@ package csvcloud
 
 import (
 	"context"
+	"reflect"
 	"strings"
 
 	d "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -18,8 +19,12 @@ func (r Repository) publishResult(ctx context.Context, old Job, m Manifest, unti
 	if !old.valid() || old.Artifact != "RUNNING" || !old.TransferStarted || !old.WorkerStopped || old.Financial != "UNPAID" || old.Dispatch == nil || old.Dispatch.State != "ACTIVE" || old.Result != nil || !m.Valid() || m.Object.JobID != old.ID {
 		return old, ErrConflict
 	}
+	if old.Candidate != nil && !reflect.DeepEqual(old.Candidate, &m) {
+		return old, ErrConflict
+	}
 	n := copyJob(old)
 	n.Version++
+	n.Candidate = nil
 	n.Result = &m
 	n.Artifact = "RESULT_PREPARED"
 	n.Financial = "AWAITING_PAYMENT"

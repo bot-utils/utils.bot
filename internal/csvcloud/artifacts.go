@@ -56,6 +56,9 @@ func (a Artifacts) PublishResult(ctx context.Context, id, dispatchToken string, 
 	if e != nil {
 		return e
 	}
+	if j.Candidate != nil && a.now() >= j.TransferUntil {
+		return ErrConflict
+	}
 	_, e = a.Repo.publishResult(ctx, *j, verified, until)
 	return e
 }

@@ -184,6 +184,16 @@ func (s Storage) VerifyInput(ctx context.Context, ref Object) (Object, error) {
 // PutResult stores only a pre-bounded candidate; VerifyResult must succeed before
 // the controller conditionally publishes its manifest or offers any payment.
 func (s Storage) PutResult(ctx context.Context, m Manifest, data io.Reader) (Manifest, error) {
+	stored, err := s.putCandidate(ctx, m, data)
+	if err != nil {
+		return stored, err
+	}
+	return s.VerifyResult(ctx, stored)
+}
+
+// putCandidate needs only write permission. It does not claim stored-result
+// integrity; a separate controller must read and verify before publication.
+func (s Storage) putCandidate(ctx context.Context, m Manifest, data io.Reader) (Manifest, error) {
 	if !s.Gate.Enabled {
 		return m, ErrDisabled
 	}
@@ -197,7 +207,7 @@ func (s Storage) PutResult(ctx context.Context, m Manifest, data io.Reader) (Man
 		return m, ErrUnknown
 	}
 	m.Object.ETag = *out.ETag
-	return s.VerifyResult(ctx, m)
+	return m, nil
 }
 
 type countingHash struct {
