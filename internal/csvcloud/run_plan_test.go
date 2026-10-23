@@ -19,7 +19,12 @@ func TestRunPlanRejectsOverspendLifetimeAndReuse(t *testing.T) {
 	if p.Reserve(ctx, r, fixtureTime) != nil || p.Reserve(ctx, r, fixtureTime) == nil {
 		t.Fatal("reused run")
 	}
-	for _, mode := range []string{"budget", "wall", "resources", "production", "expired", "subnet", "security_group"} {
+	short := p
+	short.ResourcesUntil = p.Created + 3600
+	if !short.valid(fixtureTime.Unix()) {
+		t.Fatal("original earlier setup deadline must be retained")
+	}
+	for _, mode := range []string{"budget", "wall", "resources", "resources_short", "production", "expired", "subnet", "security_group"} {
 		bad := p
 		now := fixtureTime
 		switch mode {
@@ -33,6 +38,8 @@ func TestRunPlanRejectsOverspendLifetimeAndReuse(t *testing.T) {
 			bad.Until++
 		case "resources":
 			bad.ResourcesUntil++
+		case "resources_short":
+			bad.ResourcesUntil = bad.Until - 1
 		case "production":
 			bad.SyntheticOnly = false
 		case "expired":

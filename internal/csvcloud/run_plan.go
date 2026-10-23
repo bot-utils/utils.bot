@@ -25,7 +25,7 @@ type RunPlan struct {
 func (p RunPlan) valid(now int64) bool {
 	w := WireReview{Account: p.Account, RunID: p.RunID, Image: p.WorkerImage, ExecutionRole: "arn:aws:iam::" + p.Account + ":role/utils-bot-csv-private-" + prefix(p.RunID, 16) + "-worker-execution", SecretARN: "arn:aws:ssm:us-east-2:" + p.Account + ":parameter/utils-bot/csv-private/" + p.RunID + "/tls", SyntheticOnly: p.SyntheticOnly}
 	_, e := (BrokerReview{Worker: w, Image: p.BrokerImage}).Definition()
-	return p.Subnet == privateTrialSubnet && p.SecurityGroup == privateTrialSecurityGroup && w.valid() && e == nil && opaque(p.JobID) && p.SyntheticOnly && p.ReservedMicroUSD == 10_000_000 && p.Created > 0 && p.Created <= now && p.Until == p.Created+600 && p.ResourcesUntil == p.Created+7200 && now < p.Until
+	return p.Subnet == privateTrialSubnet && p.SecurityGroup == privateTrialSecurityGroup && w.valid() && e == nil && opaque(p.JobID) && p.SyntheticOnly && p.ReservedMicroUSD == 10_000_000 && p.Created > 0 && p.Created <= now && p.Until == p.Created+600 && p.ResourcesUntil >= p.Until && p.ResourcesUntil <= p.Created+7200 && now < p.Until
 }
 func prefix(s string, n int) string {
 	if len(s) < n {
