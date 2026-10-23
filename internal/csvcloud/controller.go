@@ -23,12 +23,14 @@ type ControllerConfig struct {
 	SyntheticOnly                                    bool
 }
 type Controller struct {
-	Config   ControllerConfig
-	Repo     Repository
-	Channel  NetworkChannel
-	Reaper   Reaper
-	Fence    RunFence
-	Verifier VerifierProcess
+	Results          ResultVerifier
+	candidateWitness func(context.Context) error
+	Config           ControllerConfig
+	Repo             Repository
+	Channel          NetworkChannel
+	Reaper           Reaper
+	Fence            RunFence
+	Verifier         VerifierProcess
 }
 
 func AssembleController(ctx context.Context, c ControllerConfig, data aws.Config, verifier VerifierProcess) (Controller, error) {
@@ -104,6 +106,16 @@ func AssembleController(ctx context.Context, c ControllerConfig, data aws.Config
 	channel := NetworkChannel{Repo: repo, RunID: c.RunID, JobID: c.JobID, TaskARN: c.Worker.TaskARN, PublicKey: verifier.Key.Public().(ed25519.PublicKey)}
 	reaper := Reaper{Repo: repo, RunID: c.RunID, JobID: c.JobID}
 	controller := Controller{Config: c, Repo: repo, Channel: channel, Reaper: reaper, Fence: fence, Verifier: verifier}
+	controller.Results = objects
+	controller.candidateWitness = func(ctx context.Context) error {
+		observer := c.Worker
+		observer.Client = a.ECS
+		_, ids, e := observer.Observe(ctx)
+		if e != nil {
+			return e
+		}
+		return prove(ctx, observer, ids)
+	}
 	controller.Reaper.Recover = controller.Recover
 	return controller, nil
 }

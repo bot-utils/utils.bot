@@ -89,6 +89,7 @@ type Job struct {
 	UploadUntil, ResultUntil                                                                            int64
 	Inputs                                                                                              []Object
 	Result                                                                                              *Manifest
+	Candidate                                                                                           *Manifest
 	Dispatch                                                                                            *Dispatch
 	Settlement                                                                                          *Settlement
 	DownloadUsed                                                                                        int64
@@ -142,6 +143,9 @@ func (j Job) valid() bool {
 		seen[o.Slot] = true
 	}
 	if len(j.Inputs) == 2 && (!seen["left"] || !seen["right"]) {
+		return false
+	}
+	if j.Candidate != nil && (!j.Candidate.Valid() || j.Candidate.Object.JobID != j.ID || j.Result != nil || !j.WorkerStopped || !j.TransferStarted || j.Financial != "UNPAID" || (j.Artifact != "RUNNING" && j.Artifact != "PROCESSING_UNKNOWN" && j.Artifact != "DELETING")) {
 		return false
 	}
 	if j.Result != nil && (!j.Result.Valid() || j.Result.Object.JobID != j.ID) {
@@ -235,6 +239,9 @@ func validReplacement(a, b Job) bool {
 				return false
 			}
 		}
+	}
+	if a.Candidate != nil && !reflect.DeepEqual(a.Candidate, b.Candidate) && !(b.Candidate == nil && b.Artifact == "RESULT_PREPARED" && reflect.DeepEqual(a.Candidate, b.Result)) {
+		return false
 	}
 	if a.Result != nil && !reflect.DeepEqual(a.Result, b.Result) {
 		return false

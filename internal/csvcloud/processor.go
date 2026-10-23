@@ -46,6 +46,7 @@ type ProcessingObjects interface {
 	PutResult(context.Context, Manifest, io.Reader) (Manifest, error)
 }
 type Processor struct {
+	StageResults  bool
 	Repo          Repository
 	Objects       ProcessingObjects
 	Worker        WorkerSession
@@ -139,6 +140,10 @@ func (p Processor) Process(ctx context.Context, id string, q csvwire.Request) (e
 	now := p.now()
 	if ctx.Err() != nil || now.Unix() >= current.TransferUntil {
 		return ErrUnknown
+	}
+	if p.StageResults {
+		_, e = p.Repo.stageCandidate(ctx, current, verified)
+		return e
 	}
 	_, e = p.Repo.publishResult(ctx, current, verified, now.Add(30*time.Minute).Unix())
 	return e
