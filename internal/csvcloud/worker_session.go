@@ -69,6 +69,11 @@ func (w PrivateWorker) task(ctx context.Context, d Dispatch) (et.Task, error) {
 			seen[name] = true
 		}
 		overrides.ContainerOverrides = nil
+		// ECS reports this optional list as [] even when no override was
+		// requested. Normalize only the observed empty value on our copy.
+		if len(overrides.InferenceAcceleratorOverrides) == 0 {
+			overrides.InferenceAcceleratorOverrides = nil
+		}
 		if !reflect.DeepEqual(overrides, et.TaskOverride{}) {
 			return et.Task{}, ErrIntegrity
 		}

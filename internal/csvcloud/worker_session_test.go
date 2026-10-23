@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"net/netip"
 	"strings"
 	"testing"
@@ -106,5 +107,30 @@ func TestPrivateLifecycleRejectsForeignTasksEndpointsOverridesAndUncertainty(t *
 				t.Fatal("foreign or drifted task stopped")
 			}
 		})
+	}
+}
+
+func TestPrivateTaskAcceptsObservedEmptyOverrideDefaults(t *testing.T) {
+	w, d, s, _ := workerFixture()
+	s.task.Overrides = &et.TaskOverride{
+		ContainerOverrides:            []et.ContainerOverride{{Name: aws.String("fifo-init")}, {Name: aws.String("parser")}, {Name: aws.String("transport")}},
+		InferenceAcceleratorOverrides: []et.InferenceAcceleratorOverride{},
+	}
+	before, _ := json.Marshal(s.task)
+	if _, err := w.task(context.Background(), d); err != nil {
+		t.Fatal("observed empty provider override rejected", err)
+	}
+	after, _ := json.Marshal(s.task)
+	if string(before) != string(after) {
+		t.Fatal("runtime observation mutated")
+	}
+	s.task.Overrides.InferenceAcceleratorOverrides = []et.InferenceAcceleratorOverride{{DeviceName: aws.String("unapproved")}}
+	if _, err := w.task(context.Background(), d); err == nil {
+		t.Fatal("actual inference override accepted")
+	}
+	s.task.Overrides.InferenceAcceleratorOverrides = nil
+	s.task.Overrides.ContainerOverrides[1].Command = []string{"unapproved"}
+	if _, err := w.task(context.Background(), d); err == nil {
+		t.Fatal("actual parser command override accepted")
 	}
 }
