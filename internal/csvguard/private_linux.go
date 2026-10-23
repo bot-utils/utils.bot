@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strconv"
-	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -99,16 +98,6 @@ func InstallPrivate() error {
 	return nil
 }
 
-// NoCredentials rejects unexpected credential sources rather than hiding them.
-func NoCredentials() bool {
-	for _, e := range os.Environ() {
-		k, v, _ := strings.Cut(e, "=")
-		if v != "" && (strings.HasPrefix(k, "AWS_") || k == "CSV_TLS_BOOTSTRAP") {
-			return false
-		}
-	}
-	return true
-}
 func CheckCapabilities(expected uint64) error {
 	header := [2]uint32{0x20080522, 0}
 	data := [6]uint32{}
