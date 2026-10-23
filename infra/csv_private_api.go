@@ -145,6 +145,23 @@ func emitPrivateCSVPolicies() bool {
 		}
 		documents[name] = map[string]interface{}{"Version": "2012-10-17", "Statement": statements}
 	}
+	// Resolve ordinary-stack logical IDs without synthesizing a policy file.
+	app := awscdk.NewApp(&awscdk.AppProps{AutoSynth: jsii.Bool(false)})
+	stack := awscdk.NewStack(app, jsii.String("AgentPdfMock"), &awscdk.StackProps{Env: &awscdk.Environment{Account: jsii.String(account), Region: jsii.String("us-east-2")}})
+	roles := bindCSVUploadCoordinators(account, *config, stack)
+	exports := map[string]interface{}{}
+	for _, run := range config.Runs {
+		role := roles[run.ID]
+		resource := role.Node().DefaultChild().(awscdk.CfnElement)
+		policy := role.Node().TryFindChild(jsii.String("DefaultPolicy"))
+		policyResource := policy.Node().DefaultChild().(awscdk.CfnElement)
+		statements := []interface{}{}
+		for _, s := range csvUploadStatements(account, run, false) {
+			statements = append(statements, s.ToStatementJson())
+		}
+		exports[run.ID] = map[string]interface{}{"role_id": stack.GetLogicalId(resource), "policy_id": stack.GetLogicalId(policyResource), "role_name": role.RoleName(), "identity": map[string]interface{}{"Version": "2012-10-17", "Statement": statements}, "trust": map[string]interface{}{"Version": "2012-10-17", "Statement": []interface{}{map[string]interface{}{"Effect": "Allow", "Action": "sts:AssumeRole", "Principal": map[string]string{"AWS": "arn:aws:iam::" + account + ":role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_LocalCLIAccess_452e4a519811dc0f"}, "Condition": map[string]interface{}{"StringEquals": map[string]string{"sts:RoleSessionName": "csv-upload-" + run.ID[:16]}, "DateLessThan": map[string]string{"aws:CurrentTime": time.Unix(run.Until, 0).UTC().Format(time.RFC3339)}}}}}}
+	}
+	documents["upload_coordinators"] = exports
 	if json.NewEncoder(os.Stdout).Encode(documents) != nil {
 		panic("private CSV policy export failed")
 	}
@@ -192,7 +209,8 @@ func csvUploadStatements(account string, run csvPrivateRun, namespace bool) []aw
 		statement("CsvUploadQueue", []string{"sqs:SendMessage"}, []string{queue}, condition()),
 	}
 }
-func bindCSVUploadCoordinators(account string, c csvPrivateConfig, scope constructs.Construct) {
+func bindCSVUploadCoordinators(account string, c csvPrivateConfig, scope constructs.Construct) map[string]awsiam.Role {
+	out := map[string]awsiam.Role{}
 	for _, run := range c.Runs {
 		// This is the existing operator's exact IAM role, not the account root, API
 		// role, service principal or a wildcard PrincipalArn condition.
@@ -201,7 +219,9 @@ func bindCSVUploadCoordinators(account string, c csvPrivateConfig, scope constru
 		for _, s := range csvUploadStatements(account, run, false) {
 			role.AddToPolicy(s)
 		}
+		out[run.ID] = role
 	}
+	return out
 }
 
 // A managed-policy boundary is limited to 6 KiB. The expiring namespace ceiling
