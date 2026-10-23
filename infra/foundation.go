@@ -108,6 +108,17 @@ func foundationStack(app awscdk.App, account, region string) awscdk.Stack {
 		},
 	})
 
+	// Explicit expiring validation ceiling, absent on ordinary builds. Boundary
+	// maintenance uses the existing owner path, never the application deployer.
+	if csv, _ := csvPrivateSettings(); csv != nil {
+		if csv.Account != account {
+			panic("private CSV boundary account differs")
+		}
+		for _, statement := range csvPrivateStatements(account, *csv, true) {
+			runtimeBoundary.AddStatements(statement)
+		}
+	}
+
 	if os.Getenv("PDF_BOUNDARY_API_CERTIFICATE_ARN") != "" {
 		requiredFoundationARN("PDF_BOUNDARY_API_CERTIFICATE_ARN", "arn:aws:acm:"+region+":"+account+":certificate/")
 	}

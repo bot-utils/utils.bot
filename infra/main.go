@@ -18,6 +18,9 @@ import (
 
 func main() {
 	defer jsii.Close()
+	if emitPrivateCSVPolicies() {
+		return
+	}
 	app := awscdk.NewApp(nil)
 	account := os.Getenv("CDK_DEFAULT_ACCOUNT")
 	requireDeploymentAccount(account, os.Getenv("PDF_LOCALSTACK") == "1")
@@ -169,7 +172,8 @@ func main() {
 	linux := awsecs.NewLinuxParameters(stack, jsii.String("Linux"), &awsecs.LinuxParametersProps{InitProcessEnabled: jsii.Bool(true)})
 	linux.DropCapabilities(awsecs.Capability_ALL)
 	imageTarget := serverImageTarget(os.Getenv("PDF_PRIVATE_EDGE_CHECK"), account, local, edgeEnabled, public)
-	task.AddContainer(jsii.String("Server"), &awsecs.ContainerDefinitionOptions{Image: awsecs.ContainerImage_FromAsset(jsii.String(".."), &awsecs.AssetImageProps{Platform: awsecrassets.Platform_LINUX_ARM64(), Target: jsii.String(imageTarget)}), User: jsii.String("10001:10001"), ReadonlyRootFilesystem: jsii.Bool(true), LinuxParameters: linux, StopTimeout: awscdk.Duration_Seconds(jsii.Number(120)), Logging: awsecs.LogDriver_AwsLogs(&awsecs.AwsLogDriverProps{StreamPrefix: jsii.String("server"), LogGroup: logs}), Environment: &map[string]*string{"PAYMENT_MODE": jsii.String(paymentCfg.Mode), "PAYMENT_PAY_TO": jsii.String(paymentCfg.PayTo), "RESOURCE_URL": resource, "PAYMENT_FUNCTION_ARN": alias.FunctionArn(), "PUBLIC_ACCESS": jsii.String(boolSetting(public)), "GOMEMLIMIT": jsii.String("512MiB")}, PortMappings: &[]*awsecs.PortMapping{{ContainerPort: jsii.Number(8080), Protocol: awsecs.Protocol_TCP}}})
+	serverContainer := task.AddContainer(jsii.String("Server"), &awsecs.ContainerDefinitionOptions{Image: awsecs.ContainerImage_FromAsset(jsii.String(".."), &awsecs.AssetImageProps{Platform: awsecrassets.Platform_LINUX_ARM64(), Target: jsii.String(imageTarget)}), User: jsii.String("10001:10001"), ReadonlyRootFilesystem: jsii.Bool(true), LinuxParameters: linux, StopTimeout: awscdk.Duration_Seconds(jsii.Number(120)), Logging: awsecs.LogDriver_AwsLogs(&awsecs.AwsLogDriverProps{StreamPrefix: jsii.String("server"), LogGroup: logs}), Environment: &map[string]*string{"PAYMENT_MODE": jsii.String(paymentCfg.Mode), "PAYMENT_PAY_TO": jsii.String(paymentCfg.PayTo), "RESOURCE_URL": resource, "PAYMENT_FUNCTION_ARN": alias.FunctionArn(), "PUBLIC_ACCESS": jsii.String(boolSetting(public)), "GOMEMLIMIT": jsii.String("512MiB")}, PortMappings: &[]*awsecs.PortMapping{{ContainerPort: jsii.Number(8080), Protocol: awsecs.Protocol_TCP}}})
+	bindPrivateCSV(account, task, serverContainer)
 	hardenTaskRoles(task)
 	autoscaling := autoscalingSetting(os.Getenv("PDF_ENABLE_AUTOSCALING"), os.Getenv("PDF_DESIRED_COUNT"))
 	autoscalingConfigured := autoscalingConfiguredSetting(os.Getenv("PDF_AUTOSCALING_CONFIGURED"))

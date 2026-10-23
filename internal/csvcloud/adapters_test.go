@@ -85,7 +85,16 @@ func (m *memoryDynamo) TransactWriteItems(_ context.Context, in *dynamodb.Transa
 		} else if v.ConditionCheck != nil {
 			check := v.ConditionCheck
 			old := m.rows[avs(check.Key["pk"])]
-			if aws.ToString(check.ConditionExpression) != "#v = :v" || avs(old["version"]) != avs(check.ExpressionAttributeValues[":v"]) {
+			switch aws.ToString(check.ConditionExpression) {
+			case "attribute_not_exists(pk)":
+				if len(old) != 0 {
+					return nil, &d.TransactionCanceledException{}
+				}
+			case "#v = :v":
+				if avs(old["version"]) != avs(check.ExpressionAttributeValues[":v"]) {
+					return nil, &d.TransactionCanceledException{}
+				}
+			default:
 				return nil, &d.TransactionCanceledException{}
 			}
 		} else if v.Update != nil {

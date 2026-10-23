@@ -41,6 +41,17 @@ func regionalAPI(stack awscdk.Stack, alb awselasticloadbalancingv2.ApplicationLo
 	// Depend only on the listener resource, not its target/service descendants.
 	listener.Node().DefaultChild().(awscdk.CfnResource).AddDependency(origin.Node().DefaultChild().(awscdk.CfnResource))
 	listener.AddAction(jsii.String("PaidPDF"), &awselasticloadbalancingv2.AddApplicationActionProps{Priority: jsii.Number(10), Conditions: &[]awselasticloadbalancingv2.ListenerCondition{awselasticloadbalancingv2.ListenerCondition_HostHeaders(jsii.Strings(regionalAPIHost)), awselasticloadbalancingv2.ListenerCondition_PathPatterns(jsii.Strings("/v1/pdf/text")), awselasticloadbalancingv2.ListenerCondition_HttpRequestMethods(jsii.Strings("POST", "OPTIONS"))}, Action: awselasticloadbalancingv2.ListenerAction_Forward(&[]awselasticloadbalancingv2.IApplicationTargetGroup{targets}, nil)})
+	if csv, _ := csvPrivateSettings(); csv != nil {
+		alb.SetAttribute(jsii.String("routing.http.xff_header_processing.mode"), jsii.String("append"))
+		alb.SetAttribute(jsii.String("routing.http.xff_client_port.enabled"), jsii.String("false"))
+		listener.AddAction(jsii.String("PrivateCSV"), &awselasticloadbalancingv2.AddApplicationActionProps{Priority: jsii.Number(12), Conditions: &[]awselasticloadbalancingv2.ListenerCondition{
+			awselasticloadbalancingv2.ListenerCondition_HostHeaders(jsii.Strings(regionalAPIHost)),
+			awselasticloadbalancingv2.ListenerCondition_PathPatterns(jsii.Strings("/csv/*")),
+			awselasticloadbalancingv2.ListenerCondition_HttpRequestMethods(jsii.Strings("GET", "POST")),
+			awselasticloadbalancingv2.ListenerCondition_SourceIps(jsii.Strings(csv.AllowedIP + "/32")),
+		}, Action: awselasticloadbalancingv2.ListenerAction_Forward(&[]awselasticloadbalancingv2.IApplicationTargetGroup{targets}, nil)})
+	}
+
 	if len(html) > 0 {
 		if !ownerCIDR(os.Getenv("PDF_ALLOWED_CIDR")) {
 			panic("HTML draft requires owner IPv4 /32")
