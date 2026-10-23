@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/netip"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
@@ -162,10 +164,77 @@ func emitPrivateCSVPolicies() bool {
 		exports[run.ID] = map[string]interface{}{"role_id": stack.GetLogicalId(resource), "policy_id": stack.GetLogicalId(policyResource), "role_name": "AgentPdfMock-CsvUpload-" + run.ID[:16], "identity": map[string]interface{}{"Version": "2012-10-17", "Statement": statements}, "trust": map[string]interface{}{"Version": "2012-10-17", "Statement": []interface{}{map[string]interface{}{"Effect": "Allow", "Action": "sts:AssumeRole", "Principal": map[string]string{"AWS": "arn:aws:iam::" + account + ":role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_LocalCLIAccess_452e4a519811dc0f"}, "Condition": map[string]interface{}{"StringEquals": map[string]string{"sts:RoleSessionName": "csv-upload-" + run.ID[:16]}, "DateLessThan": map[string]string{"aws:CurrentTime": time.Unix(run.Until, 0).UTC().Format(time.RFC3339)}}}}}}
 	}
 	documents["upload_coordinators"] = exports
-	if json.NewEncoder(os.Stdout).Encode(documents) != nil {
+	raw, err := marshalPrivateCSVPolicies(stack, documents)
+	if err != nil {
 		panic("private CSV policy export failed")
 	}
+	if _, err := os.Stdout.Write(append(raw, '\n')); err != nil {
+		panic("private CSV policy export write failed")
+	}
 	return true
+}
+
+// Resolve CDK/JSII map wrappers before encoding standalone IAM JSON. Direct
+// encoding of ToStatementJson can leak transport markers into Conditions.
+func marshalPrivateCSVPolicies(stack awscdk.Stack, documents interface{}) ([]byte, error) {
+	raw, err := json.Marshal(stack.Resolve(documents))
+	if err != nil {
+		return nil, err
+	}
+	var decoded interface{}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return nil, err
+	}
+	normalized, err := normalizePrivateCSVJSON(decoded)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(normalized)
+}
+
+// Only the exact closed JSII map transport shape is accepted. Unknown or mixed
+// wrappers fail rather than silently changing a generated permission document.
+func normalizePrivateCSVJSON(value interface{}) (interface{}, error) {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		if wrapped, ok := v["$jsii.map"]; ok {
+			if len(v) != 1 {
+				return nil, fmt.Errorf("mixed JSII map wrapper")
+			}
+			object, ok := wrapped.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("nonobject JSII map wrapper")
+			}
+			return normalizePrivateCSVJSON(object)
+		}
+		out := make(map[string]interface{}, len(v))
+		for k, child := range v {
+			if strings.HasPrefix(k, "$jsii") {
+				return nil, fmt.Errorf("unknown JSII wrapper")
+			}
+			normalized, err := normalizePrivateCSVJSON(child)
+			if err != nil {
+				return nil, err
+			}
+			out[k] = normalized
+		}
+		return out, nil
+	case []interface{}:
+		out := make([]interface{}, len(v))
+		for i, child := range v {
+			normalized, err := normalizePrivateCSVJSON(child)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = normalized
+		}
+		return out, nil
+	case string:
+		if strings.Contains(v, "${Token[") {
+			return nil, fmt.Errorf("unresolved policy token")
+		}
+	}
+	return value, nil
 }
 
 // The private upload consumer has a distinct exact-run identity, never the API

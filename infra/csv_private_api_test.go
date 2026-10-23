@@ -178,3 +178,51 @@ func TestPrivateRetirementKeyIsCoordinatorOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestPrivateCSVPolicyExportUsesOrdinaryIAMConditionMaps(t *testing.T) {
+	defer jsii.Close()
+	c := csvInfraFixture(t)
+	app := awscdk.NewApp(&awscdk.AppProps{AutoSynth: jsii.Bool(false)})
+	stack := awscdk.NewStack(app, jsii.String("CsvPolicyExport"), nil)
+	var statements []interface{}
+	for _, s := range csvPrivateStatements(c.Account, c, false) {
+		statements = append(statements, s.ToStatementJson())
+	}
+	raw, err := marshalPrivateCSVPolicies(stack, map[string]interface{}{"Version": "2012-10-17", "Statement": statements})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "$jsii") || strings.Contains(string(raw), "${Token[") {
+		t.Fatalf("unresolved export: %s", raw)
+	}
+	var doc struct {
+		Statement []struct{ Condition map[string]json.RawMessage }
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	var expiry map[string]string
+	if err := json.Unmarshal(doc.Statement[0].Condition["DateLessThan"], &expiry); err != nil {
+		t.Fatal(err)
+	}
+	if expiry["aws:CurrentTime"] != time.Unix(c.Runs[0].Until, 0).UTC().Format(time.RFC3339) {
+		t.Fatalf("invalid expiry: %s", raw)
+	}
+	var keys map[string][]string
+	if err := json.Unmarshal(doc.Statement[2].Condition["ForAllValues:StringLike"], &keys); err != nil || len(keys["dynamodb:LeadingKeys"]) == 0 {
+		t.Fatalf("invalid keys: %s", raw)
+	}
+}
+
+func TestPrivateCSVPolicyExportRejectsMalformedWrappers(t *testing.T) {
+	for _, value := range []interface{}{
+		map[string]interface{}{"$jsii.map": map[string]interface{}{}, "Effect": "Allow"},
+		map[string]interface{}{"$jsii.map": "bad"},
+		map[string]interface{}{"$jsii.byref": "bad"},
+		"${Token[TOKEN.123]}",
+	} {
+		if _, err := normalizePrivateCSVJSON(value); err == nil {
+			t.Fatalf("accepted unresolved value: %#v", value)
+		}
+	}
+}
