@@ -19,6 +19,7 @@ import (
 type privateAWSConfig struct {
 	RunID, WorkerImage, BrokerImage, StatePath         string
 	ExistingWorkerDefinition, ExistingBrokerDefinition string
+	ResourcesUntil                                     int64
 }
 type privateAWSState struct {
 	Config                                                     privateAWSConfig
@@ -36,7 +37,7 @@ func privateAWSInput(t *testing.T, stage string) (privateAWSConfig, aws.Config) 
 	}
 	p := RunPlan{RunID: c.RunID, JobID: c.RunID, Account: "999999999999", Subnet: privateTrialSubnet, SecurityGroup: privateTrialSecurityGroup, WorkerImage: c.WorkerImage, BrokerImage: c.BrokerImage, Created: time.Now().Unix(), ReservedMicroUSD: 10_000_000, SyntheticOnly: true}
 	p.Until = p.Created + 600
-	p.ResourcesUntil = p.Created + 7200
+	p.ResourcesUntil = c.ResourcesUntil
 	if !p.valid(time.Now().Unix()) {
 		t.Fatal("unreviewed private plan")
 	}

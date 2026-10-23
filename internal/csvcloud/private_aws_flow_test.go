@@ -13,11 +13,13 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptrace"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -29,10 +31,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	d "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	et "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	st "github.com/aws/aws-sdk-go-v2/service/ssm/types"
+	"github.com/aws/smithy-go"
 	tabular "pdfservice/internal/csvtabular"
 	"pdfservice/internal/csvwire"
 	"pdfservice/internal/jsonwire"
@@ -135,12 +139,68 @@ func privateIdentities(now time.Time) (csvwire.Bootstrap, csvwire.Bootstrap, err
 
 type privateCountingECS struct {
 	*ecs.Client
-	starts int
+	starts         int
+	errorCode      string
+	failureReasons []string
 }
 
 func (c *privateCountingECS) RunTask(ctx context.Context, in *ecs.RunTaskInput, opts ...func(*ecs.Options)) (*ecs.RunTaskOutput, error) {
 	c.starts++
-	return c.Client.RunTask(ctx, in, opts...)
+	out, err := c.Client.RunTask(ctx, in, opts...)
+	var api smithy.APIError
+	if errors.As(err, &api) {
+		c.errorCode = api.ErrorCode()
+	}
+	if out != nil {
+		for _, f := range out.Failures {
+			c.failureReasons = append(c.failureReasons, aws.ToString(f.Reason))
+		}
+	}
+	return out, err
+}
+
+func privateClusterReady(out *ecs.DescribeClustersOutput, arn string) bool {
+	if out == nil || len(out.Failures) != 0 || len(out.Clusters) != 1 {
+		return false
+	}
+	c := out.Clusters[0]
+	return aws.ToString(c.ClusterArn) == arn && aws.ToString(c.Status) == "ACTIVE" &&
+		c.RunningTasksCount == 0 && c.PendingTasksCount == 0 && c.ActiveServicesCount == 0
+}
+
+func TestPrivateClusterPreflightRejectsInactiveMissingAndOccupied(t *testing.T) {
+	arn := "arn:aws:ecs:us-east-2:999999999999:cluster/utils-bot-csv-trial"
+	good := et.Cluster{ClusterArn: aws.String(arn), Status: aws.String("ACTIVE")}
+	if !privateClusterReady(&ecs.DescribeClustersOutput{Clusters: []et.Cluster{good}}, arn) {
+		t.Fatal("empty active isolated cluster rejected")
+	}
+	for _, mode := range []string{"inactive", "missing", "foreign", "running", "pending", "service", "failure", "multiple"} {
+		c := good
+		out := &ecs.DescribeClustersOutput{}
+		switch mode {
+		case "inactive":
+			c.Status = aws.String("INACTIVE")
+		case "foreign":
+			c.ClusterArn = aws.String("arn:aws:ecs:us-east-2:999999999999:cluster/agent-pdf-mock")
+		case "running":
+			c.RunningTasksCount = 1
+		case "pending":
+			c.PendingTasksCount = 1
+		case "service":
+			c.ActiveServicesCount = 1
+		case "failure":
+			out.Failures = []et.Failure{{Reason: aws.String("MISSING")}}
+		}
+		if mode != "missing" {
+			out.Clusters = []et.Cluster{c}
+		}
+		if mode == "multiple" {
+			out.Clusters = append(out.Clusters, good)
+		}
+		if privateClusterReady(out, arn) {
+			t.Fatal("unsafe preflight accepted", mode)
+		}
+	}
 }
 
 // TestPrivateAWSFlow uses only pre-created isolated resources. IAM/trust creation
@@ -181,6 +241,13 @@ func TestPrivateAWSFlow(t *testing.T) {
 	storage := Storage{Client: a.S3, Presigner: a.Parts, Bucket: "utils-csv-999999999999-" + c.RunID[:24], Account: "999999999999", Gate: Gate{Enabled: true}}
 	ctx, cancel := context.WithTimeout(context.Background(), 11*time.Minute)
 	defer cancel()
+	// Verify the exact isolated cluster before uploading or dispatching. This
+	// catches a previously deleted cluster without creating a replacement.
+	clusterARN := "arn:aws:ecs:us-east-2:999999999999:cluster/utils-bot-csv-trial"
+	cluster, clusterError := a.ECS.DescribeClusters(ctx, &ecs.DescribeClustersInput{Clusters: []string{clusterARN}})
+	if clusterError != nil || !privateClusterReady(cluster, clusterARN) {
+		t.Fatal("isolated cluster must already be active and empty; no upload or task start")
+	}
 	// Validate provider defaults before any upload or task start.
 	if (RunFence{Storage: storage, Control: a.S3, PolicyHash: AbsentBucketPolicyHash}).checkBucket(ctx) != nil {
 		t.Fatal("trial bucket protections differ")
@@ -206,7 +273,7 @@ func TestPrivateAWSFlow(t *testing.T) {
 		t.Fatal("private recovery checkpoint")
 	}
 	now := time.Now()
-	plan := RunPlan{RunID: c.RunID, JobID: c.RunID, Account: storage.Account, Subnet: privateTrialSubnet, SecurityGroup: privateTrialSecurityGroup, WorkerImage: c.WorkerImage, BrokerImage: c.BrokerImage, Created: now.Unix(), Until: now.Add(10 * time.Minute).Unix(), ResourcesUntil: now.Add(2 * time.Hour).Unix(), ReservedMicroUSD: 10_000_000, SyntheticOnly: true}
+	plan := RunPlan{RunID: c.RunID, JobID: c.RunID, Account: storage.Account, Subnet: privateTrialSubnet, SecurityGroup: privateTrialSecurityGroup, WorkerImage: c.WorkerImage, BrokerImage: c.BrokerImage, Created: now.Unix(), Until: now.Add(10 * time.Minute).Unix(), ResourcesUntil: c.ResourcesUntil, ReservedMicroUSD: 10_000_000, SyntheticOnly: true}
 	if plan.Reserve(ctx, repo, now) != nil {
 		t.Fatal("durable one-shot reservation")
 	}
@@ -293,7 +360,7 @@ func TestPrivateAWSFlow(t *testing.T) {
 	runner := Runner{Wire: &review, Client: counted, Repo: repo, Gate: Gate{Enabled: true, Dispatch: true}, Cluster: "arn:aws:ecs:us-east-2:999999999999:cluster/utils-bot-csv-trial", Definition: state.WorkerDefinition, Subnet: privateTrialSubnet, SecurityGroup: privateTrialSecurityGroup, Container: "transport", IsolationReview: state.WorkerHash}
 	startError := plan.StartWorker(ctx, runner, message, time.Now())
 	if startError != nil {
-		t.Fatal("worker start uncertain; preserve original attempt", startError)
+		t.Fatalf("worker start uncertain; preserve original attempt: %v api_code=%s failure_reasons=%q", startError, counted.errorCode, counted.failureReasons)
 	}
 	jobPtr, e = repo.Get(ctx, job.ID)
 	if e != nil || jobPtr == nil || jobPtr.Dispatch == nil || jobPtr.Dispatch.TaskARN == "" {
@@ -534,5 +601,43 @@ func beginPrivateLatePut(ctx context.Context, a AWSClients, storage Storage, job
 	case <-ctx.Done():
 		releaseBody()
 		return nil, ErrCleanup
+	}
+}
+
+func TestPrivateBootstrapFitsSecretBoundsAndAuthenticatesClient(t *testing.T) {
+	now := fixtureTime
+	server, client, e := privateIdentities(now)
+	if e != nil {
+		t.Fatal(e)
+	}
+	raw, _ := json.Marshal(server)
+	if len(raw) > 4096 {
+		t.Fatal("transport secret exceeds standard parameter limit")
+	}
+	if _, e = csvwire.ServerTLS(raw, now); e != nil {
+		t.Fatal("server identity", e)
+	}
+	cfg, e := csvwire.ClientTLS(client, now)
+	if e != nil || len(cfg.NextProtos) != 1 || cfg.NextProtos[0] != csvwire.Protocol {
+		t.Fatal("client identity")
+	}
+	c := privateAWSConfig{RunID: strings.Repeat("a", 64), WorkerImage: "999999999999.dkr.ecr.us-east-2.amazonaws.com/utils-bot-csv-private@sha256:" + strings.Repeat("b", 64)}
+	q, _, _ := privateJoinFixture()
+	pub, _, e := ed25519.GenerateKey(rand.Reader)
+	if e != nil {
+		t.Fatal(e)
+	}
+	b := BrokerBootstrap{RunID: c.RunID, JobID: c.RunID, Account: "999999999999", Table: "utils-bot-csv-private-" + c.RunID[:16], Bucket: "utils-csv-999999999999-" + c.RunID[:24], Cluster: "arn:aws:ecs:us-east-2:999999999999:cluster/utils-bot-csv-trial", Definition: "arn:aws:ecs:us-east-2:999999999999:task-definition/utils-bot-csv-private-" + c.RunID[:16] + "-worker:1", Subnet: privateTrialSubnet, Prefix: "10.88.0.0/24", Until: now.Add(10 * time.Minute).Unix(), Review: privateAWSReview(c), Request: q, Identity: client, NetworkPublicKey: base64.StdEncoding.EncodeToString(pub)}
+	encoded, _ := json.Marshal(b)
+	if len(encoded) > 8192 {
+		t.Fatal("broker secret exceeds advanced parameter limit")
+	}
+	if _, e = DecodeBroker(encoded, now); e != nil {
+		t.Fatal("valid private bootstrap rejected")
+	}
+	worker := PrivateWorker{Review: &b.Review, Client: &lifecycleStub{}, Verifier: &networkStub{}, Cluster: b.Cluster, Definition: b.Definition, Subnet: b.Subnet, Prefix: netip.MustParsePrefix(b.Prefix), TLS: cfg, Gate: Gate{Enabled: true}}
+	dispatch := Dispatch{Token: ID(), TaskARN: "arn:aws:ecs:us-east-2:999999999999:task/utils-bot-csv-trial/" + strings.Repeat("d", 32)}
+	if !worker.valid(dispatch) {
+		t.Fatal("production client TLS and worker validation disagree")
 	}
 }
