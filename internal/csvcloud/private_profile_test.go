@@ -74,3 +74,55 @@ func TestPrivateRequestContainsNoJobOrTLSOverride(t *testing.T) {
 		t.Fatal("job or identity exposed")
 	}
 }
+
+func TestProviderDefaultsValidateWithoutMutatingPinnedDefinition(t *testing.T) {
+	w := privateReview()
+	worker, _ := w.Definition()
+	broker, _ := (BrokerReview{Worker: w, Image: w.Image}).Definition()
+	for kind, original := range map[string]et.TaskDefinition{"worker": worker, "broker": broker} {
+		raw, _ := json.Marshal(original)
+		var d et.TaskDefinition
+		_ = json.Unmarshal(raw, &d)
+		d.PlacementConstraints = []et.TaskDefinitionPlacementConstraint{}
+		if len(d.Volumes) == 0 {
+			d.Volumes = []et.Volume{}
+		}
+		for i := range d.Volumes {
+			d.Volumes[i].Host = &et.HostVolumeProperties{}
+		}
+		for i := range d.ContainerDefinitions {
+			c := &d.ContainerDefinitions[i]
+			if len(c.Environment) == 0 {
+				c.Environment = []et.KeyValuePair{}
+			}
+			c.SystemControls = []et.SystemControl{}
+			c.VolumesFrom = []et.VolumeFrom{}
+			if len(c.MountPoints) == 0 {
+				c.MountPoints = []et.MountPoint{}
+			}
+			if len(c.PortMappings) == 0 {
+				c.PortMappings = []et.PortMapping{}
+			}
+			for j := range c.PortMappings {
+				c.PortMappings[j].HostPort = c.PortMappings[j].ContainerPort
+			}
+			c.LinuxParameters.Capabilities.Add = []string{}
+		}
+		before, _ := json.Marshal(d)
+		validate := w.Validate
+		if kind == "broker" {
+			validate = (BrokerReview{Worker: w, Image: w.Image}).Validate
+		}
+		if validate(&d) != nil {
+			t.Fatal("legitimate defaults rejected", kind)
+		}
+		after, _ := json.Marshal(d)
+		if string(before) != string(after) {
+			t.Fatal("hash-pinned source mutated")
+		}
+		d.ContainerDefinitions[0].Environment = []et.KeyValuePair{{Name: aws.String("UNAPPROVED"), Value: aws.String("value")}}
+		if validate(&d) == nil {
+			t.Fatal("environment drift hidden", kind)
+		}
+	}
+}
