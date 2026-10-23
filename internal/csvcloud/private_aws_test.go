@@ -55,12 +55,24 @@ func privateAWSInput(t *testing.T, stage string) (privateAWSConfig, aws.Config) 
 func privateAWSReview(c privateAWSConfig) WireReview {
 	return WireReview{Account: "999999999999", RunID: c.RunID, Image: c.WorkerImage, ExecutionRole: "arn:aws:iam::999999999999:role/utils-bot-csv-private-" + c.RunID[:16] + "-worker-execution", SecretARN: "arn:aws:ssm:us-east-2:999999999999:parameter/utils-bot/csv-private/" + c.RunID + "/tls", SyntheticOnly: true}
 }
+func requirePrivateAWSCluster(t *testing.T, ctx context.Context, client *ecs.Client) {
+	t.Helper()
+	arn := "arn:aws:ecs:us-east-2:999999999999:cluster/utils-bot-csv-trial"
+	out, err := client.DescribeClusters(ctx, &ecs.DescribeClustersInput{Clusters: []string{arn}}, func(o *ecs.Options) { o.RetryMaxAttempts = 1 })
+	if err != nil || !privateClusterReady(out, arn) {
+		t.Fatal("isolated cluster must already be active and empty; no registration, upload or task start")
+	}
+}
+
 func TestPrivateAWSRegister(t *testing.T) {
 	c, cfg := privateAWSInput(t, "register")
 	if _, e := os.Lstat(c.StatePath); !os.IsNotExist(e) {
 		t.Fatal("one-shot state already exists")
 	}
 	client := ecs.NewFromConfig(cfg)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	requirePrivateAWSCluster(t, ctx, client)
 	worker := privateAWSReview(c)
 	broker := BrokerReview{Worker: worker, Image: c.BrokerImage}
 	w, e := worker.Registration()
@@ -71,8 +83,6 @@ func TestPrivateAWSRegister(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
 	state := privateAWSState{Config: c}
 	for _, mode := range []string{"worker", "broker"} {
 		request := w
