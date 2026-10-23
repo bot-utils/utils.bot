@@ -29,17 +29,9 @@ func (BrokerBootstrap) String() string   { return "CSV broker bootstrap [redacte
 func (BrokerBootstrap) GoString() string { return "CSV broker bootstrap [redacted]" }
 func DecodeBroker(raw []byte, now time.Time) (BrokerBootstrap, error) {
 	var b BrokerBootstrap
-	if jsonwire.Decode(raw, &b, 8192) != nil || !opaque(b.RunID) || !opaque(b.JobID) || !b.Review.valid() || b.Account != b.Review.Account || b.RunID != b.Review.RunID || b.Table != "utils-bot-csv-private-"+b.RunID[:16] || b.Bucket != "utils-csv-"+b.Account+"-"+b.RunID[:24] || b.Cluster != "arn:aws:ecs:us-east-2:"+b.Account+":cluster/utils-bot-csv-trial" || b.Subnet != "subnet-00000000000000001" || b.Prefix != "10.88.0.0/24" || b.Until <= now.Unix() || b.Until > now.Add(10*time.Minute).Unix() || b.Request.Validate() != nil || b.Request.Operation != "join" {
+	if jsonwire.Decode(raw, &b, 8192) != nil || !opaque(b.RunID) || !opaque(b.JobID) || !b.Review.valid() || b.Account != b.Review.Account || b.RunID != b.Review.RunID || b.Table != "utils-bot-csv-private-"+b.RunID[:16] || b.Bucket != "utils-csv-"+b.Account+"-"+b.RunID[:24] || b.Cluster != "arn:aws:ecs:us-east-2:"+b.Account+":cluster/utils-bot-csv-trial" || b.Subnet != "subnet-00000000000000001" || b.Prefix != "10.88.0.0/24" || b.Until <= now.Unix() || b.Until > now.Add(10*time.Minute).Unix() || b.Request.Validate() != nil {
 		return b, ErrInvalid
 	}
-	var total int64
-	for _, f := range b.Request.Files {
-		total += f.Bytes
-	}
-	if total != 1<<20 {
-		return b, ErrInvalid
-	}
-
 	key, e := base64.StdEncoding.DecodeString(b.NetworkPublicKey)
 	if e != nil || len(key) != ed25519.PublicKeySize {
 		return b, ErrInvalid

@@ -671,6 +671,32 @@ func TestPrivateBootstrapFitsSecretBoundsAndAuthenticatesClient(t *testing.T) {
 	if _, e = DecodeBroker(encoded, now); e != nil {
 		t.Fatal("valid private bootstrap rejected")
 	}
+	// The broker accepts the same four bounded tools as the private HTTP and
+	// wire contracts. The one-shot AWS fixture remains a fixed 1 MiB join.
+	for op, options := range map[string]string{
+		"dedupe":    `{"key_columns":["id"],"keep":"first"}`,
+		"aggregate": `{"group_columns":["id"],"metrics":[{"name":"n","op":"count_rows"}]}`,
+		"transform": `{"column":"id","op":"upper"}`,
+	} {
+		t.Run(op, func(t *testing.T) {
+			candidate := b
+			canon, err := tabular.CanonicalOptions(op, json.RawMessage(options))
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidate.Request = csvwire.Request{Version: 1, Operation: op, Options: canon, Files: []csvwire.File{{Slot: "file", Bytes: csvwire.MaxInput, SHA256: ID()}}}
+			encoded, _ := json.Marshal(candidate)
+			if _, err := DecodeBroker(encoded, now); err != nil {
+				t.Fatal("bounded tool rejected", err)
+			}
+			candidate.Request.Files[0].Bytes++
+			encoded, _ = json.Marshal(candidate)
+			if _, err := DecodeBroker(encoded, now); err == nil {
+				t.Fatal("worker byte limit bypassed")
+			}
+		})
+	}
+
 	worker := PrivateWorker{Review: &b.Review, Client: &lifecycleStub{}, Verifier: &networkStub{}, Cluster: b.Cluster, Definition: b.Definition, Subnet: b.Subnet, Prefix: netip.MustParsePrefix(b.Prefix), TLS: cfg, Gate: Gate{Enabled: true}}
 	dispatch := Dispatch{Token: ID(), TaskARN: "arn:aws:ecs:us-east-2:999999999999:task/utils-bot-csv-trial/" + strings.Repeat("d", 32)}
 	if !worker.valid(dispatch) {
