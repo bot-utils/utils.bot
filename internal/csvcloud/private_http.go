@@ -66,7 +66,11 @@ type PrivateDownload struct {
 	Body   io.ReadCloser
 	Bytes  int64
 	SHA256 string
+	// Finish records a complete write to the HTTP transport, not a client
+	// receipt. Abort releases the lease without recording completion or
+	// refunding the reserved transfer budget. Both must be idempotent.
 	Finish func(context.Context) error
+	Abort  func(context.Context) error
 }
 
 var ErrPrivateUnpaid = errors.New("csv_private_result_unpaid")
@@ -191,24 +195,38 @@ func (s PrivateHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			privateError(w, err)
 			return
 		}
-		if result.Body == nil || result.Bytes <= 0 || result.Bytes > MaxResult || !opaque(result.SHA256) || result.Finish == nil {
-			if result.Body != nil {
-				result.Body.Close()
+		completed, closed := false, false
+		defer func() {
+			if result.Body != nil && !closed {
+				_ = result.Body.Close()
 			}
+			if !completed && result.Abort != nil {
+				cleanup, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+				defer cancel()
+				_ = result.Abort(cleanup)
+			}
+		}()
+		if result.Body == nil || result.Bytes <= 0 || result.Bytes > MaxResult || !opaque(result.SHA256) || result.Finish == nil || result.Abort == nil {
 			privateError(w, ErrUnknown)
 			return
 		}
-		defer result.Body.Close()
 		w.Header().Set("Content-Type", "application/gzip")
 		w.Header().Set("Content-Length", strconv.FormatInt(result.Bytes, 10))
 		w.Header().Set("Content-Disposition", `attachment; filename="result.csv.gz"`)
 		// The independent manifest already commits to these exact compressed bytes.
 		w.Header().Set("ETag", `"`+result.SHA256+`"`)
 		w.WriteHeader(http.StatusOK)
-		_, _ = io.CopyN(w, result.Body, result.Bytes)
+		// CopyN can hide an error returned alongside the final requested
+		// bytes. Copy a limited reader and check both count and error instead.
+		written, copyErr := io.Copy(w, io.LimitReader(result.Body, result.Bytes))
+		closeErr := result.Body.Close()
+		closed = true
+		if copyErr != nil || written != result.Bytes || closeErr != nil || r.Context().Err() != nil {
+			return
+		}
 		finish, done := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
 		defer done()
-		_ = result.Finish(finish)
+		completed = result.Finish(finish) == nil
 		return
 	}
 	if r.Method != http.MethodPost {

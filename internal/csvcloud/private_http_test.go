@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,10 +16,11 @@ import (
 )
 
 type privateHTTPStub struct {
-	calls int
-	q     csvwire.Request
-	id    string
-	paid  bool
+	calls    int
+	q        csvwire.Request
+	id       string
+	paid     bool
+	download *PrivateDownload
 }
 
 func (s *privateHTTPStub) Begin(_ context.Context, q csvwire.Request) (PrivateAdmission, error) {
@@ -39,11 +41,14 @@ func (s *privateHTTPStub) SimulatePayment(context.Context, string) error {
 func (s *privateHTTPStub) Cancel(context.Context, string) error { s.calls++; return nil }
 func (s *privateHTTPStub) Download(context.Context, string) (PrivateDownload, error) {
 	s.calls++
+	if s.download != nil {
+		return *s.download, nil
+	}
 	if !s.paid {
 		return PrivateDownload{}, ErrPrivateUnpaid
 	}
 	_, encoded := manifest(s.id)
-	return PrivateDownload{Body: io.NopCloser(bytes.NewReader(encoded)), Bytes: int64(len(encoded)), SHA256: Hash(encoded), Finish: func(context.Context) error { return nil }}, nil
+	return PrivateDownload{Body: io.NopCloser(bytes.NewReader(encoded)), Bytes: int64(len(encoded)), SHA256: Hash(encoded), Finish: func(context.Context) error { return nil }, Abort: func(context.Context) error { return nil }}, nil
 }
 func privateHTTPFixture() (PrivateHTTP, *privateHTTPStub, string) {
 	key := ID()
@@ -160,5 +165,124 @@ func TestPrivateHTTPUnpaidDownloadAndSyntheticOnlyPayment(t *testing.T) {
 	}
 	if b.calls != calls {
 		t.Fatal("invalid path reached backend")
+	}
+}
+
+type privateDownloadBody struct {
+	io.Reader
+	closes   int
+	closeErr error
+}
+
+func (b *privateDownloadBody) Close() error { b.closes++; return b.closeErr }
+
+type privateReadFailure struct{}
+
+func (privateReadFailure) Read([]byte) (int, error) { return 0, errors.New("synthetic read failure") }
+
+type privateDownloadWriter struct {
+	*httptest.ResponseRecorder
+	failure string
+	cancel  context.CancelFunc
+}
+
+func (w *privateDownloadWriter) Write(p []byte) (int, error) {
+	switch w.failure {
+	case "disconnect":
+		return 0, errors.New("synthetic client disconnect")
+	case "short_write":
+		n, _ := w.ResponseRecorder.Write(p[:len(p)/2])
+		return n, nil
+	case "final_write_error":
+		n, _ := w.ResponseRecorder.Write(p)
+		return n, errors.New("synthetic final write failure")
+	case "panic":
+		panic("synthetic writer panic")
+	}
+	n, err := w.ResponseRecorder.Write(p)
+	if w.cancel != nil {
+		w.cancel()
+	}
+	return n, err
+}
+func TestPrivateHTTPDownloadCompletionRequiresCompleteDelivery(t *testing.T) {
+	for _, scenario := range []string{"complete", "short_body", "read_failure", "disconnect", "short_write", "final_write_error", "cancelled", "close_failure", "finish_failure", "panic", "invalid_manifest", "missing_abort"} {
+		t.Run(scenario, func(t *testing.T) {
+			handler, backend, key := privateHTTPFixture()
+			_, payload := manifest(backend.id)
+			body := &privateDownloadBody{Reader: bytes.NewReader(payload)}
+			finishes, aborts := 0, 0
+			backend.download = &PrivateDownload{Body: body, Bytes: int64(len(payload)), SHA256: Hash(payload), Finish: func(ctx context.Context) error {
+				finishes++
+				if ctx.Err() != nil {
+					t.Error("finish context already cancelled")
+				}
+				if scenario == "finish_failure" {
+					return ErrUnknown
+				}
+				return nil
+			}, Abort: func(ctx context.Context) error {
+				aborts++
+				if ctx.Err() != nil {
+					t.Error("abort inherited cancelled request")
+				}
+				if _, ok := ctx.Deadline(); !ok {
+					t.Error("abort lacks bounded deadline")
+				}
+				return nil
+			}}
+			switch scenario {
+			case "short_body":
+				body.Reader = bytes.NewReader(payload[:len(payload)-1])
+			case "read_failure":
+				body.Reader = io.MultiReader(bytes.NewReader(payload[:len(payload)/2]), privateReadFailure{})
+			case "close_failure":
+				body.closeErr = errors.New("synthetic body close failure")
+			case "invalid_manifest":
+				backend.download.Bytes = 0
+			case "missing_abort":
+				backend.download.Abort = nil
+			}
+			req := httptest.NewRequest("GET", "/csv/jobs/"+backend.id+"/download", nil)
+			req.RemoteAddr = "192.0.2.10:3000"
+			req.Header.Set("X-CSV-Test-Key", key)
+			ctx, cancel := context.WithCancel(req.Context())
+			defer cancel()
+			req = req.WithContext(ctx)
+			writer := &privateDownloadWriter{ResponseRecorder: httptest.NewRecorder(), failure: scenario}
+			if scenario == "cancelled" {
+				writer.cancel = cancel
+			}
+			panicked := false
+			func() {
+				defer func() {
+					if recover() != nil {
+						panicked = true
+					}
+				}()
+				handler.ServeHTTP(writer, req)
+			}()
+			wantFinishes, wantAborts := 0, 1
+			switch scenario {
+			case "complete":
+				wantFinishes, wantAborts = 1, 0
+			case "finish_failure":
+				wantFinishes = 1
+			case "missing_abort":
+				wantAborts = 0
+			}
+			if finishes != wantFinishes || aborts != wantAborts || body.closes != 1 {
+				t.Fatalf("finish=%d abort=%d closes=%d", finishes, aborts, body.closes)
+			}
+			if panicked != (scenario == "panic") {
+				t.Fatal("unexpected panic behavior")
+			}
+			if scenario == "complete" && !bytes.Equal(writer.Body.Bytes(), payload) {
+				t.Fatal("complete payload changed")
+			}
+			if (scenario == "missing_abort" || scenario == "invalid_manifest") && writer.Code != 503 {
+				t.Fatal("invalid lease contract accepted", writer.Code)
+			}
+		})
 	}
 }
