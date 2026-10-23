@@ -228,11 +228,6 @@ func TestPrivateAWSFlow(t *testing.T) {
 	if _, e := os.Lstat(c.StatePath + ".attempt"); !os.IsNotExist(e) {
 		t.Fatal("one-shot flow already attempted")
 	}
-	claim, e := os.OpenFile(c.StatePath+".attempt", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	if e != nil {
-		t.Fatal("one-shot local claim")
-	}
-	claim.Close()
 	a, e := clients(cfg)
 	if e != nil {
 		t.Fatal("private clients")
@@ -241,13 +236,14 @@ func TestPrivateAWSFlow(t *testing.T) {
 	storage := Storage{Client: a.S3, Presigner: a.Parts, Bucket: "utils-csv-818416606421-" + c.RunID[:24], Account: "818416606421", Gate: Gate{Enabled: true}}
 	ctx, cancel := context.WithTimeout(context.Background(), 11*time.Minute)
 	defer cancel()
-	// Verify the exact isolated cluster before uploading or dispatching. This
-	// catches a previously deleted cluster without creating a replacement.
-	clusterARN := "arn:aws:ecs:us-east-2:818416606421:cluster/utils-bot-csv-trial"
-	cluster, clusterError := a.ECS.DescribeClusters(ctx, &ecs.DescribeClustersInput{Clusters: []string{clusterARN}})
-	if clusterError != nil || !privateClusterReady(cluster, clusterARN) {
-		t.Fatal("isolated cluster must already be active and empty; no upload or task start")
+	// Preflight before even the local one-shot claim. A missing cluster does
+	// not create a reservation, secret, upload or task definition.
+	requirePrivateAWSCluster(t, ctx, a.ECS)
+	claim, e := os.OpenFile(c.StatePath+".attempt", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if e != nil {
+		t.Fatal("one-shot local claim")
 	}
+	claim.Close()
 	// Validate provider defaults before any upload or task start.
 	if (RunFence{Storage: storage, Control: a.S3, PolicyHash: AbsentBucketPolicyHash}).checkBucket(ctx) != nil {
 		t.Fatal("trial bucket protections differ")
