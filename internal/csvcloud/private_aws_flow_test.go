@@ -254,6 +254,7 @@ func TestPrivateAWSFlow(t *testing.T) {
 	if (Artifacts{Repo: repo, Inputs: storage, Gate: Gate{Enabled: true}}).AcceptUploads(ctx, job.ID) != nil {
 		t.Fatal("whole input verification")
 	}
+	t.Log("PRIVATE_UPLOADS_VERIFIED bytes=1048576 files=2")
 	jobPtr, e := repo.Get(ctx, job.ID)
 	if e != nil || jobPtr == nil {
 		t.Fatal("job readback")
@@ -281,6 +282,7 @@ func TestPrivateAWSFlow(t *testing.T) {
 	if reaper.Schedule(ctx, time.Now().Add(2*time.Minute).Unix()) != nil {
 		t.Fatal("durable recovery schedule before dispatch")
 	}
+	t.Log("PRIVATE_RECOVERY_ARMED before_dispatch=true")
 	secrets := ssm.NewFromConfig(cfg)
 	tlsRaw, _ := json.Marshal(server)
 	if _, e = secrets.PutParameter(ctx, &ssm.PutParameterInput{Name: aws.String("/utils-bot/csv-private/" + c.RunID + "/tls"), Value: aws.String(string(tlsRaw)), Type: st.ParameterTypeSecureString, Tier: st.ParameterTierStandard, Overwrite: aws.Bool(false)}); e != nil {
