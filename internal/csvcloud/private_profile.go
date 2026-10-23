@@ -47,7 +47,7 @@ func (w WireReview) Validate(d *et.TaskDefinition) error {
 	if e != nil || d == nil {
 		return ErrInvalid
 	}
-	actual := *d
+	actual := normalizedPrivateDefinition(*d)
 	actual.TaskDefinitionArn = nil
 	actual.Revision = 0
 	actual.Status = ""
@@ -70,4 +70,69 @@ func (w WireReview) Registration() (*ecs.RegisterTaskDefinitionInput, error) {
 		return nil, e
 	}
 	return &ecs.RegisterTaskDefinitionInput{Family: d.Family, ExecutionRoleArn: d.ExecutionRoleArn, NetworkMode: d.NetworkMode, ContainerDefinitions: d.ContainerDefinitions, Volumes: d.Volumes, Cpu: d.Cpu, Memory: d.Memory, RuntimePlatform: d.RuntimePlatform, RequiresCompatibilities: d.RequiresCompatibilities, Tags: []et.Tag{{Key: aws.String("CSVPrivateRun"), Value: aws.String(w.RunID)}, {Key: aws.String("CSVPrivateKind"), Value: aws.String("worker")}}}, nil
+}
+
+// Normalize only observed provider defaults that do not change the profile.
+// Clone nested structs/slices so validation never mutates the hash-pinned input.
+func normalizedPrivateDefinition(d et.TaskDefinition) et.TaskDefinition {
+	d.ContainerDefinitions = append([]et.ContainerDefinition(nil), d.ContainerDefinitions...)
+	if len(d.PlacementConstraints) == 0 {
+		d.PlacementConstraints = nil
+	}
+	if len(d.Volumes) == 0 {
+		d.Volumes = nil
+	} else {
+		d.Volumes = append([]et.Volume(nil), d.Volumes...)
+	}
+	for i := range d.Volumes {
+		if h := d.Volumes[i].Host; h != nil && reflect.DeepEqual(*h, et.HostVolumeProperties{}) {
+			d.Volumes[i].Host = nil
+		}
+	}
+	for i := range d.ContainerDefinitions {
+		c := &d.ContainerDefinitions[i]
+		if len(c.Environment) == 0 {
+			c.Environment = nil
+		}
+		if len(c.MountPoints) == 0 {
+			c.MountPoints = nil
+		}
+		if len(c.PortMappings) == 0 {
+			c.PortMappings = nil
+		}
+		if len(c.VolumesFrom) == 0 {
+			c.VolumesFrom = nil
+		}
+		if len(c.SystemControls) == 0 {
+			c.SystemControls = nil
+		}
+		if len(c.DependsOn) == 0 {
+			c.DependsOn = nil
+		}
+		if len(c.Secrets) == 0 {
+			c.Secrets = nil
+		}
+		if len(c.PortMappings) > 0 {
+			c.PortMappings = append([]et.PortMapping(nil), c.PortMappings...)
+		}
+		for j := range c.PortMappings {
+			p := &c.PortMappings[j]
+			if d.NetworkMode == et.NetworkModeAwsvpc && p.HostPort != nil && p.ContainerPort != nil && *p.HostPort == *p.ContainerPort {
+				p.HostPort = nil
+			}
+		}
+		if c.LinuxParameters != nil {
+			l := *c.LinuxParameters
+			c.LinuxParameters = &l
+			if l.Capabilities != nil {
+				k := *l.Capabilities
+				l.Capabilities = &k
+				c.LinuxParameters = &l
+				if len(k.Add) == 0 {
+					c.LinuxParameters.Capabilities.Add = nil
+				}
+			}
+		}
+	}
+	return d
 }

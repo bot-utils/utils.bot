@@ -28,7 +28,7 @@ func (b BrokerReview) Validate(d *et.TaskDefinition) error {
 	if e != nil || d == nil {
 		return ErrInvalid
 	}
-	actual := *d
+	actual := normalizedPrivateDefinition(*d)
 	actual.TaskDefinitionArn = nil
 	actual.Revision = 0
 	actual.Status = ""
