@@ -2,6 +2,11 @@
 
 package main
 
-import "errors"
+import (
+	"errors"
+	"pdfservice/internal/csvwire"
+)
 
 func harden() error { return errors.New("unsupported_private_broker") }
+
+func initSpool() error { return csvwire.ErrWorker }

@@ -299,3 +299,43 @@ func TestPrivateAWSBackendRejectsOtherRunBeforeProviderCalls(t *testing.T) {
 		t.Fatal("non-synthetic backend admitted", e)
 	}
 }
+
+func TestPrivateLargeMultipartAdmissionPinsEveryPart(t *testing.T) {
+	f := newPrivateBackendFixture(t)
+	f.b.Request.Version = 2
+	f.b.Request.Files[0].Bytes = 1 << 30
+	parts := []Part{}
+	for i := 0; i < 16; i++ {
+		parts = append(parts, Part{Number: int32(i + 1), Bytes: 64 << 20, SHA256: Hash([]byte(strconv.Itoa(i)))})
+	}
+	f.b.Parts = map[string][]Part{"file": parts}
+	admission, e := f.b.Begin(ctx, f.b.Request)
+	if e != nil || len(admission.Parts) != 16 || f.creates != 1 || f.gets != 0 {
+		t.Fatal("large metadata admission", e)
+	}
+	for i, p := range admission.Parts {
+		if p.Number != int32(i+1) || http.Header(p.Headers).Get("Content-Length") != "67108864" || http.Header(p.Headers).Get("X-Amz-Checksum-Sha256") != checksum(parts[i].SHA256) {
+			t.Fatal("part plan not pinned")
+		}
+	}
+	for _, scenario := range []string{"missing", "total", "number", "hash", "oversized"} {
+		copied := append([]Part(nil), parts...)
+		switch scenario {
+		case "missing":
+			copied = copied[:15]
+		case "total":
+			copied[15].Bytes--
+		case "number":
+			copied[5].Number = 1
+		case "hash":
+			copied[3].SHA256 = "bad"
+		case "oversized":
+			copied[0].Bytes++
+			copied[15].Bytes--
+		}
+		run := PrivateAPIRun{ID: f.b.RunID, Request: f.b.Request, Parts: map[string][]Part{"file": copied}}
+		if privatePartPlanValid(run) {
+			t.Fatal("invalid part plan admitted", scenario)
+		}
+	}
+}

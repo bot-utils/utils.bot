@@ -23,9 +23,10 @@ type PrivateAPIConfig struct {
 	Runs          []PrivateAPIRun `json:"runs"`
 }
 type PrivateAPIRun struct {
-	ID      string          `json:"id"`
-	Until   int64           `json:"until"`
-	Request csvwire.Request `json:"request"`
+	ID      string            `json:"id"`
+	Until   int64             `json:"until"`
+	Request csvwire.Request   `json:"request"`
+	Parts   map[string][]Part `json:"parts,omitempty"`
 }
 
 func ParsePrivateAPIConfig(raw []byte, now time.Time) (PrivateAPIConfig, error) {
@@ -45,7 +46,7 @@ func ParsePrivateAPIConfig(raw []byte, now time.Time) (PrivateAPIConfig, error) 
 	}
 	ids, bindings := map[string]bool{}, map[string]bool{}
 	for _, run := range c.Runs {
-		if !opaque(run.ID) || run.Until <= 0 || run.Until > now.Add(2*time.Hour).Unix() || run.Request.Validate() != nil || ids[run.ID] || bindings[run.Request.Binding()] {
+		if !opaque(run.ID) || run.Until <= 0 || run.Until > now.Add(2*time.Hour).Unix() || run.Request.Validate() != nil || !privatePartPlanValid(run) || ids[run.ID] || bindings[run.Request.Binding()] {
 			return c, ErrInvalid
 		}
 		ids[run.ID] = true
@@ -112,7 +113,29 @@ func NewPrivateAWSHTTP(raw []byte, cfg aws.Config) (http.Handler, error) {
 		repo := Repository{Client: a.Dynamo, Table: "utils-bot-csv-private-" + run.ID[:16], Gate: Gate{Enabled: true}}
 		objects := Storage{Client: a.S3, Presigner: a.Parts, Bucket: "utils-csv-" + c.Account + "-" + run.ID[:24], Account: c.Account, Gate: Gate{Enabled: true}}
 		queue := Queue{Client: a.SQS, URL: "https://sqs.us-east-2.amazonaws.com/" + c.Account + "/" + repo.Table, Repo: repo, Gate: Gate{Enabled: true}}
-		backends[run.ID] = &PrivateRunBackend{RunID: run.ID, Until: run.Until, SyntheticOnly: true, Request: run.Request, Repo: repo, Objects: objects, Queue: queue}
+		backends[run.ID] = &PrivateRunBackend{RunID: run.ID, Until: run.Until, SyntheticOnly: true, Request: run.Request, Parts: run.Parts, Repo: repo, Objects: objects, Queue: queue}
 	}
 	return PrivateHTTP{Enabled: true, SyntheticOnly: true, AllowedIP: netip.MustParseAddr(c.AllowedIP), KeySHA256: c.KeySHA256, ClientIP: PrivateALBClientIP(c.ALBPeers), Backend: backends}, nil
+}
+
+func privatePartPlanValid(run PrivateAPIRun) bool {
+	if run.Request.Version == 1 && len(run.Parts) == 0 {
+		return true
+	}
+	if len(run.Parts) != len(run.Request.Files) {
+		return false
+	}
+	for _, f := range run.Request.Files {
+		parts := run.Parts[f.Slot]
+		u := Upload{Object: Object{JobID: run.ID, ID: run.ID, Slot: f.Slot, Bytes: f.Bytes, SHA256: f.SHA256}, Parts: parts}
+		if !u.valid() || len(parts) > 16 {
+			return false
+		}
+		for _, p := range parts {
+			if p.Bytes > 64<<20 {
+				return false
+			}
+		}
+	}
+	return true
 }

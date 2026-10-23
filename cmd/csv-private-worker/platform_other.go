@@ -16,3 +16,8 @@ func stdio(bool) error       { return csvwire.ErrWorker }
 func hardenTransport() error { return csvwire.ErrWorker }
 
 func descriptorProbe() error { return csvwire.ErrWorker }
+
+func initStreamPipes() error             { return csvwire.ErrWorker }
+func streamParser(context.Context) error { return csvwire.ErrWorker }
+
+func streamStdio() error { return csvwire.ErrWorker }

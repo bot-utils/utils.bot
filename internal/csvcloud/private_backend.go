@@ -22,6 +22,7 @@ type PrivateRunBackend struct {
 	Until         int64
 	SyntheticOnly bool
 	Request       csvwire.Request
+	Parts         map[string][]Part
 	Repo          Repository
 	Objects       Storage
 	Queue         Queue
@@ -48,7 +49,7 @@ func (b PrivateRunBackend) now() int64 {
 	return time.Now().Unix()
 }
 func (b PrivateRunBackend) valid() bool {
-	return b.SyntheticOnly && opaque(b.RunID) && b.Request.Validate() == nil && b.Until > b.now() && b.Until <= b.now()+7200 && b.Repo.Client != nil && b.Repo.Gate.Enabled && b.Repo.Table == "utils-bot-csv-private-"+b.RunID[:16] && b.Objects.Client != nil && b.Objects.Presigner != nil && b.Objects.Gate.Enabled && b.Objects.Bucket == "utils-csv-"+b.Objects.Account+"-"+b.RunID[:24] && b.Queue.Client != nil && b.Queue.Gate.Enabled && b.Queue.Repo.Table == b.Repo.Table && b.Queue.URL == "https://sqs.us-east-2.amazonaws.com/"+b.Objects.Account+"/"+b.Repo.Table
+	return b.SyntheticOnly && opaque(b.RunID) && b.Request.Validate() == nil && privatePartPlanValid(PrivateAPIRun{ID: b.RunID, Request: b.Request, Parts: b.Parts}) && b.Until > b.now() && b.Until <= b.now()+7200 && b.Repo.Client != nil && b.Repo.Gate.Enabled && b.Repo.Table == "utils-bot-csv-private-"+b.RunID[:16] && b.Objects.Client != nil && b.Objects.Presigner != nil && b.Objects.Gate.Enabled && b.Objects.Bucket == "utils-csv-"+b.Objects.Account+"-"+b.RunID[:24] && b.Queue.Client != nil && b.Queue.Gate.Enabled && b.Queue.Repo.Table == b.Repo.Table && b.Queue.URL == "https://sqs.us-east-2.amazonaws.com/"+b.Objects.Account+"/"+b.Repo.Table
 }
 func (b PrivateRunBackend) job(ctx context.Context, id string) (*Job, error) {
 	if !b.valid() {
@@ -144,7 +145,11 @@ func (b PrivateRunBackend) Begin(ctx context.Context, q csvwire.Request) (Privat
 		// All side-effecting calls below are preceded by durable intent. Lost
 		// responses retain the original object/upload identity; never create again.
 		for _, o := range fresh.Inputs {
-			r := privateUploadRecord{Version: 1, State: "CREATING", Upload: Upload{Object: o, Parts: []Part{{Number: 1, Bytes: o.Bytes, SHA256: o.SHA256}}, Expires: fresh.UploadUntil}}
+			parts := b.Parts[o.Slot]
+			if len(parts) == 0 {
+				parts = []Part{{Number: 1, Bytes: o.Bytes, SHA256: o.SHA256}}
+			}
+			r := privateUploadRecord{Version: 1, State: "CREATING", Upload: Upload{Object: o, Parts: parts, Expires: fresh.UploadUntil}}
 			if err = b.write(ctx, "API_UPLOAD/"+o.ID, 0, r, &fresh); err != nil {
 				return reply, err
 			}
@@ -173,11 +178,13 @@ func (b PrivateRunBackend) Begin(ctx context.Context, q csvwire.Request) (Privat
 		if r.State != "OPEN" {
 			return PrivateAdmission{}, ErrUnknown
 		}
-		grant, e := b.Objects.Grant(ctx, r.Upload, 1, time.Unix(b.now(), 0))
-		if e != nil {
-			return PrivateAdmission{}, e
+		for _, part := range r.Upload.Parts {
+			grant, e := b.Objects.Grant(ctx, r.Upload, part.Number, time.Unix(b.now(), 0))
+			if e != nil {
+				return PrivateAdmission{}, e
+			}
+			reply.Parts = append(reply.Parts, PrivatePart{Slot: o.Slot, Number: part.Number, URL: grant.URL, Headers: grant.Headers})
 		}
-		reply.Parts = append(reply.Parts, PrivatePart{Slot: o.Slot, Number: 1, URL: grant.URL, Headers: grant.Headers})
 	}
 	return reply, nil
 }

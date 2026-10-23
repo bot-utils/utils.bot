@@ -14,7 +14,11 @@ import (
 func main() {
 	mode := flag.String("mode", "", "explicit private worker mode")
 	flag.Parse()
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	duration := 90 * time.Second
+	if *mode == "fifo-init-stream" || *mode == "parser-stream" || *mode == "transport-stream" {
+		duration = 390 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), duration)
 	defer cancel()
 	var e error
 	switch *mode {
@@ -22,15 +26,21 @@ func main() {
 		e = descriptorProbe()
 	case "fifo-init":
 		e = initPipes()
+	case "fifo-init-stream":
+		e = initStreamPipes()
+	case "parser-stream":
+		e = streamParser(ctx)
 	case "parser":
 		e = parser(ctx, false)
 	case "probe":
 		e = parser(ctx, true)
+	case "sandbox-stream-stdio":
+		e = streamStdio()
 	case "sandbox-stdio":
 		e = stdio(false)
 	case "probe-stdio":
 		e = stdio(true)
-	case "transport":
+	case "transport", "transport-stream":
 		raw := os.Getenv("CSV_TLS_BOOTSTRAP")
 		_ = os.Unsetenv("CSV_TLS_BOOTSTRAP")
 		if hardenTransport() != nil {
@@ -39,6 +49,9 @@ func main() {
 		}
 		cfg, err := csvwire.ServerTLS([]byte(raw), time.Now())
 		raw = ""
+		if err == nil && ((*mode == "transport-stream") != (cfg.NextProtos[0] == csvwire.StreamProtocol)) {
+			err = csvwire.ErrWire
+		}
 		if err != nil {
 			e = err
 			break

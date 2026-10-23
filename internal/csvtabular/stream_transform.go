@@ -187,3 +187,53 @@ func StreamTransform(input io.Reader, output io.Writer, raw json.RawMessage, lim
 	}
 	return StreamStats{InputBytes: bounded.total, OutputBytes: sink.total, Rows: rows}, nil
 }
+
+// ValidateStreamCSV applies the same bounded strict CSV/cell/header rules as
+// the stream engine without retaining rows or performing a transformation.
+func ValidateStreamCSV(input io.Reader, maxBytes int64, maxRows int) (int, error) {
+	if maxBytes <= 0 || maxBytes > 1<<30 || maxRows < 0 || maxRows > 10_000_000 {
+		return 0, bad("invalid_limits")
+	}
+	bounded := &csvBoundedInput{source: input, cap: maxBytes}
+	buffered := bufio.NewReaderSize(bounded, 32<<10)
+	prefix, _ := buffered.Peek(3)
+	if bytes.HasPrefix(prefix, []byte{0xef, 0xbb, 0xbf}) {
+		return 0, bad("invalid_csv")
+	}
+	reader := csv.NewReader(buffered)
+	header, e := reader.Read()
+	if e != nil {
+		return 0, streamReadError(e)
+	}
+	if len(header) > MaxColumns {
+		return 0, limit("column_limit")
+	}
+	seen := map[string]bool{}
+	for _, h := range header {
+		if h == "" || seen[h] || !utf8.ValidString(h) || bytes.IndexByte([]byte(h), 0) >= 0 {
+			return 0, bad("invalid_header")
+		}
+		if len(h) > MaxHeader {
+			return 0, limit("header_limit")
+		}
+		seen[h] = true
+	}
+	rows := 0
+	for {
+		row, e := reader.Read()
+		if e == io.EOF {
+			break
+		}
+		if e != nil {
+			return 0, streamReadError(e)
+		}
+		if rows >= maxRows {
+			return 0, limit("row_limit")
+		}
+		if e = validCells(row); e != nil {
+			return 0, e
+		}
+		rows++
+	}
+	return rows, nil
+}

@@ -17,6 +17,8 @@ import (
 // These integration checks require an explicit one-shot synthetic gate. Ordinary
 // tests never load credentials, create resources, start tasks or submit payment.
 type privateAWSConfig struct {
+	Operation                                          string
+	LargeTransform                                     bool
 	RunID, WorkerImage, BrokerImage, StatePath         string
 	ExistingWorkerDefinition, ExistingBrokerDefinition string
 	ResourcesUntil                                     int64
@@ -35,7 +37,7 @@ func privateAWSInput(t *testing.T, stage string) (privateAWSConfig, aws.Config) 
 	if jsonwire.Decode([]byte(os.Getenv("CSV_PRIVATE_AWS_CONFIG")), &c, 4096) != nil || !opaque(c.RunID) || os.Getenv("CSV_PRIVATE_AWS_VALIDATE") != c.RunID || !filepath.IsAbs(c.StatePath) {
 		t.Fatal("invalid private gate")
 	}
-	p := RunPlan{RunID: c.RunID, JobID: c.RunID, Account: "999999999999", Subnet: privateTrialSubnet, SecurityGroup: privateTrialSecurityGroup, WorkerImage: c.WorkerImage, BrokerImage: c.BrokerImage, Created: time.Now().Unix(), ReservedMicroUSD: 10_000_000, SyntheticOnly: true}
+	p := RunPlan{RunID: c.RunID, JobID: c.RunID, Account: "999999999999", Subnet: privateTrialSubnet, SecurityGroup: privateTrialSecurityGroup, WorkerImage: c.WorkerImage, BrokerImage: c.BrokerImage, Created: time.Now().Unix(), ReservedMicroUSD: 10_000_000, SyntheticOnly: true, Stream: c.LargeTransform}
 	p.Until = p.Created + 600
 	p.ResourcesUntil = c.ResourcesUntil
 	if !p.valid(time.Now().Unix()) {
@@ -53,7 +55,7 @@ func privateAWSInput(t *testing.T, stage string) (privateAWSConfig, aws.Config) 
 	return c, cfg
 }
 func privateAWSReview(c privateAWSConfig) WireReview {
-	return WireReview{Account: "999999999999", RunID: c.RunID, Image: c.WorkerImage, ExecutionRole: "arn:aws:iam::999999999999:role/utils-bot-csv-private-" + c.RunID[:16] + "-worker-execution", SecretARN: "arn:aws:ssm:us-east-2:999999999999:parameter/utils-bot/csv-private/" + c.RunID + "/tls", SyntheticOnly: true}
+	return WireReview{Account: "999999999999", RunID: c.RunID, Image: c.WorkerImage, ExecutionRole: "arn:aws:iam::999999999999:role/utils-bot-csv-private-" + c.RunID[:16] + "-worker-execution", SecretARN: "arn:aws:ssm:us-east-2:999999999999:parameter/utils-bot/csv-private/" + c.RunID + "/tls", SyntheticOnly: true, Stream: c.LargeTransform}
 }
 func requirePrivateAWSCluster(t *testing.T, ctx context.Context, client *ecs.Client) {
 	t.Helper()
