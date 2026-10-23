@@ -62,6 +62,10 @@ type PrivateStatus struct {
 	LogicalBytes int64  `json:"logical_bytes,omitempty"`
 	PaymentMode  string `json:"payment_mode"`
 }
+
+// The backend must establish both callbacks before acquiring a download lease.
+// Finish must durably record or preserve reconciliation evidence on failure:
+// by then the HTTP body has been sent and an error cannot be reported in JSON.
 type PrivateDownload struct {
 	Body   io.ReadCloser
 	Bytes  int64
