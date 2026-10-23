@@ -47,6 +47,7 @@ type ProcessingObjects interface {
 }
 type Processor struct {
 	StageResults  bool
+	StreamSpool   func() (io.ReadWriteSeeker, io.Closer, error)
 	Repo          Repository
 	Objects       ProcessingObjects
 	Worker        WorkerSession
@@ -58,14 +59,19 @@ type Processor struct {
 
 // Process is a private broker operation, not a public endpoint. A conditional
 // claim permits one transfer attempt; uncertain sessions are never replayed.
-// This v1 uses the strict in-memory 8 MiB engine, not the large spill worker.
+// V1 retains the strict 8 MiB in-memory engine. Explicit v2 requires the
+// separate transform-only stream profile and an isolated bounded spool.
 func (p Processor) Process(ctx context.Context, id string, q csvwire.Request) (err error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	duration := 2 * time.Minute
+	if q.Version == 2 {
+		duration = 5 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 	if !p.Gate.Enabled {
 		return ErrDisabled
 	}
-	if p.Worker == nil || p.Objects == nil || q.Validate() != nil {
+	if p.Worker == nil || p.Objects == nil || q.Validate() != nil || (q.Version == 2 && p.StreamSpool == nil) {
 		return ErrInvalid
 	}
 	j, e := p.Repo.Get(ctx, id)
@@ -81,7 +87,7 @@ func (p Processor) Process(ctx context.Context, id string, q csvwire.Request) (e
 			return ErrInvalid
 		}
 	}
-	current, e := p.Repo.claimTransfer(ctx, *j, p.now().Add(2*time.Minute).Unix())
+	current, e := p.Repo.claimTransfer(ctx, *j, p.now().Add(duration).Unix())
 	if e != nil {
 		return e
 	}
@@ -114,11 +120,29 @@ func (p Processor) Process(ctx context.Context, id string, q csvwire.Request) (e
 		inputs[o.Slot] = f
 	}
 	var candidate limitedCandidate
-	m, e := p.Worker.Run(ctx, *current.Dispatch, q, inputs, &candidate)
+	var sink io.Writer = &candidate
+	var staged io.ReadSeeker
+	if q.Version == 2 {
+		file, closer, e := p.StreamSpool()
+		if e != nil || file == nil || closer == nil {
+			return ErrIntegrity
+		}
+		defer closer.Close()
+		sink = &limitedStreamCandidate{w: file}
+		staged = file
+	}
+	m, e := p.Worker.Run(ctx, *current.Dispatch, q, inputs, sink)
 	if e != nil {
 		return ErrUnknown
 	}
-	if csvwire.VerifyResult(m, candidate.Bytes()) != nil {
+	if m.Version != q.Version {
+		return ErrIntegrity
+	}
+	if q.Version == 2 {
+		if csvwire.VerifyStreamResult(m, staged) != nil {
+			return ErrIntegrity
+		}
+	} else if csvwire.VerifyResult(m, candidate.Bytes()) != nil {
 		return ErrIntegrity
 	}
 	if e = p.Worker.StopAndVerify(ctx, *current.Dispatch); e != nil {
@@ -133,7 +157,14 @@ func (p Processor) Process(ctx context.Context, id string, q csvwire.Request) (e
 		return ErrUnknown
 	}
 	manifest := Manifest{Object: Object{JobID: id, ID: ID(), Slot: "result", Bytes: m.EncodedBytes, SHA256: m.EncodedSHA256}, LogicalBytes: m.LogicalBytes, LogicalSHA256: m.LogicalSHA256, Rows: int64(m.Rows)}
-	verified, e := p.Objects.PutResult(ctx, manifest, bytes.NewReader(candidate.Bytes()))
+	var content io.Reader = bytes.NewReader(candidate.Bytes())
+	if q.Version == 2 {
+		if _, e = staged.Seek(0, io.SeekStart); e != nil {
+			return ErrIntegrity
+		}
+		content = staged
+	}
+	verified, e := p.Objects.PutResult(ctx, manifest, content)
 	if e != nil {
 		return e
 	}
@@ -280,4 +311,23 @@ func (p Processor) Recover(ctx context.Context, id string) error {
 	}
 	cleanup := Cleanup{Repo: p.Repo, Writers: p.RecoveryFence, Objects: p.Eraser, Gate: p.Gate}
 	return cleanup.Complete(ctx, id)
+}
+
+// Candidate bytes remain untrusted until gzip/CSV/hash verification and the
+// independent worker-stop proof. No output is visible during staging.
+type limitedStreamCandidate struct {
+	w io.Writer
+	n int64
+}
+
+func (c *limitedStreamCandidate) Write(p []byte) (int, error) {
+	if int64(len(p)) > csvwire.MaxStreamBytes-c.n {
+		return 0, ErrIntegrity
+	}
+	n, e := c.w.Write(p)
+	c.n += int64(n)
+	if n != len(p) && e == nil {
+		e = io.ErrShortWrite
+	}
+	return n, e
 }

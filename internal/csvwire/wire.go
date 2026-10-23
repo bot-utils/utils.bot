@@ -51,7 +51,10 @@ func digest(s string) bool {
 	return e == nil && len(v) == 32 && hex.EncodeToString(v) == s
 }
 func (r Request) Validate() error {
-	if r.Version != 1 || len(r.Files) < 1 || len(r.Files) > 2 {
+	if (r.Version != 1 && r.Version != 2) || len(r.Files) < 1 || len(r.Files) > 2 {
+		return ErrWire
+	}
+	if r.Version == 2 && r.Operation != "transform" {
 		return ErrWire
 	}
 	canon, e := tabular.CanonicalOptions(r.Operation, r.Options)
@@ -65,8 +68,12 @@ func (r Request) Validate() error {
 	} else if len(r.Files) != 1 || r.Files[0].Slot != "file" {
 		return ErrWire
 	}
+	cap := int64(MaxInput)
+	if r.Version == 2 {
+		cap = MaxStreamBytes
+	}
 	for _, f := range r.Files {
-		if f.Bytes <= 0 || f.Bytes > MaxInput || !digest(f.SHA256) {
+		if f.Bytes <= 0 || f.Bytes > cap || !digest(f.SHA256) {
 			return ErrWire
 		}
 	}
@@ -137,7 +144,7 @@ func WriteRequest(w io.Writer, q Request, inputs map[string]io.Reader) error {
 }
 func readRequest(r io.Reader) (Request, map[string][]byte, error) {
 	var q Request
-	if readFrame(r, &q) != nil || q.Validate() != nil {
+	if readFrame(r, &q) != nil || q.Version != 1 || q.Validate() != nil {
 		return q, nil, ErrWire
 	}
 	inputs := map[string][]byte{}
@@ -198,14 +205,20 @@ func Process(r io.Reader, w io.Writer) error {
 	return nil
 }
 func (m Result) Valid() bool {
-	return m.Version == 1 && m.EncodedBytes > 0 && m.EncodedBytes <= MaxOutput && m.LogicalBytes > 0 && m.LogicalBytes <= MaxOutput && m.Rows >= 0 && m.Rows <= tabular.MaxRows && digest(m.EncodedSHA256) && digest(m.LogicalSHA256)
+	cap, rows := int64(MaxOutput), tabular.MaxRows
+	if m.Version == 2 {
+		cap, rows = MaxStreamBytes, MaxStreamRows
+	} else if m.Version != 1 {
+		return false
+	}
+	return m.EncodedBytes > 0 && m.EncodedBytes <= cap && m.LogicalBytes > 0 && m.LogicalBytes <= cap && m.Rows >= 0 && m.Rows <= rows && digest(m.EncodedSHA256) && digest(m.LogicalSHA256)
 }
 
 // ReadResult verifies the complete wire and both hash domains before committing
 // bytes to the broker's candidate sink. This private v1 is bounded to 8 MiB.
 func ReadResult(r io.Reader, w io.Writer) (Result, error) {
 	var m Result
-	if readFrame(r, &m) != nil || !m.Valid() {
+	if readFrame(r, &m) != nil || m.Version != 1 || !m.Valid() {
 		return m, ErrWire
 	}
 	data := make([]byte, m.EncodedBytes)
@@ -226,7 +239,7 @@ func ReadResult(r io.Reader, w io.Writer) (Result, error) {
 }
 
 func VerifyResult(m Result, data []byte) error {
-	if !m.Valid() || int64(len(data)) != m.EncodedBytes || hash(data) != m.EncodedSHA256 {
+	if m.Version != 1 || !m.Valid() || int64(len(data)) != m.EncodedBytes || hash(data) != m.EncodedSHA256 {
 		return ErrWire
 	}
 	encoded := bytes.NewReader(data)

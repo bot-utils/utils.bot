@@ -42,7 +42,11 @@ type PrivateWorker struct {
 }
 
 func (w PrivateWorker) valid(d Dispatch) bool {
-	return w.Gate.Enabled && w.Review != nil && w.Review.valid() && regexp.MustCompile(`^arn:aws:ecs:us-east-2:`+w.Review.Account+`:task-definition/utils-bot-csv-private-`+w.Review.RunID[:16]+`-worker:[1-9][0-9]*$`).MatchString(w.Definition) && w.Client != nil && w.Verifier != nil && w.TLS != nil && !w.TLS.InsecureSkipVerify && w.TLS.RootCAs != nil && w.TLS.ServerName == "csv-worker" && w.TLS.MinVersion == tls.VersionTLS13 && w.TLS.MaxVersion == tls.VersionTLS13 && len(w.TLS.Certificates) == 1 && len(w.TLS.NextProtos) == 1 && w.TLS.NextProtos[0] == csvwire.Protocol && opaque(d.Token) && w.Prefix.IsValid() && w.Prefix.Addr().IsPrivate() && w.Prefix.Bits() >= 24 && w.Subnet != "" && strings.Contains(w.Cluster, ":ecs:us-east-2:") && strings.Contains(w.Cluster, ":cluster/") && strings.HasPrefix(d.TaskARN, strings.Replace(w.Cluster, ":cluster/", ":task/", 1)+"/") && strings.Contains(w.Definition, ":task-definition/")
+	protocol := csvwire.Protocol
+	if w.Review != nil && w.Review.Stream {
+		protocol = csvwire.StreamProtocol
+	}
+	return w.Gate.Enabled && w.Review != nil && w.Review.valid() && regexp.MustCompile(`^arn:aws:ecs:us-east-2:`+w.Review.Account+`:task-definition/utils-bot-csv-private-`+w.Review.RunID[:16]+`-worker:[1-9][0-9]*$`).MatchString(w.Definition) && w.Client != nil && w.Verifier != nil && w.TLS != nil && !w.TLS.InsecureSkipVerify && w.TLS.RootCAs != nil && w.TLS.ServerName == "csv-worker" && w.TLS.MinVersion == tls.VersionTLS13 && w.TLS.MaxVersion == tls.VersionTLS13 && len(w.TLS.Certificates) == 1 && len(w.TLS.NextProtos) == 1 && w.TLS.NextProtos[0] == protocol && opaque(d.Token) && w.Prefix.IsValid() && w.Prefix.Addr().IsPrivate() && w.Prefix.Bits() >= 24 && w.Subnet != "" && strings.Contains(w.Cluster, ":ecs:us-east-2:") && strings.Contains(w.Cluster, ":cluster/") && strings.HasPrefix(d.TaskARN, strings.Replace(w.Cluster, ":cluster/", ":task/", 1)+"/") && strings.Contains(w.Definition, ":task-definition/")
 }
 func (w PrivateWorker) task(ctx context.Context, d Dispatch) (et.Task, error) {
 	if !w.valid(d) {

@@ -162,7 +162,11 @@ func (s PrivateHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				privateError(w, err)
 				return
 			}
-			q := csvwire.Request{Version: 1, Operation: op, Options: options, Files: body.Files}
+			version := 1
+			if op == "transform" && len(body.Files) == 1 && body.Files[0].Bytes > csvwire.MaxInput {
+				version = 2
+			}
+			q := csvwire.Request{Version: version, Operation: op, Options: options, Files: body.Files}
 			if q.Validate() != nil {
 				privateError(w, ErrInvalid)
 				return

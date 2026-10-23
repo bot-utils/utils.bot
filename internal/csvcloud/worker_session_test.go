@@ -134,3 +134,19 @@ func TestPrivateTaskAcceptsObservedEmptyOverrideDefaults(t *testing.T) {
 		t.Fatal("actual parser command override accepted")
 	}
 }
+
+func TestStreamWorkerRequiresSeparateALPN(t *testing.T) {
+	w, d, _, _ := workerFixture()
+	w.Review.Stream = true
+	if w.valid(d) {
+		t.Fatal("stream profile accepted v1 connection")
+	}
+	w.TLS.NextProtos = []string{"utilsbot-csv/2"}
+	if !w.valid(d) {
+		t.Fatal("stream profile rejected v2 connection")
+	}
+	w.Review.Stream = false
+	if w.valid(d) {
+		t.Fatal("v1 profile accepted v2 connection")
+	}
+}

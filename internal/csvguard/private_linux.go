@@ -13,8 +13,24 @@ import (
 
 // InstallPrivate enforces seccomp-no-paths-v1 across all runtime threads before
 // input. The static in-memory engine needs only preopened directional pipe I/O.
-// Unknown syscalls default to EPERM. This is not the spill-to-disk profile.
-func InstallPrivate() error {
+// Unknown syscalls default to EPERM. The optional stream profile below retains
+// one preopened spool without granting any path or network syscall.
+func InstallPrivate() error { return installPrivate(-1) }
+
+// InstallPrivateSpool preserves exactly one preopened empty regular staging file.
+// Path lookup/mutation and all sockets remain denied by the same TSYNC filter.
+func InstallPrivateSpool(fd int) error {
+	if fd < 3 || fd >= 64 {
+		return errFD
+	}
+	var st syscall.Stat_t
+	flags, _, errno := syscall.Syscall(syscall.SYS_FCNTL, uintptr(fd), syscall.F_GETFL, 0)
+	if syscall.Fstat(fd, &st) != nil || st.Mode&syscall.S_IFMT != syscall.S_IFREG || st.Mode&0777 != 0600 || st.Uid != 65533 || st.Gid != 65533 || st.Nlink != 1 || st.Size != 0 || errno != 0 || int(flags)&syscall.O_ACCMODE != syscall.O_RDWR {
+		return errFD
+	}
+	return installPrivate(fd)
+}
+func installPrivate(spool int) error {
 	if os.Getuid() != 65533 {
 		return errUID
 	}
@@ -42,7 +58,7 @@ func InstallPrivate() error {
 	}
 	for _, entry := range entries {
 		fd, e := strconv.Atoi(entry.Name())
-		if e != nil || fd < 3 {
+		if e != nil || fd < 3 || fd == spool {
 			continue
 		}
 		target, e := os.Readlink("/proc/self/fd/" + entry.Name())
@@ -64,6 +80,9 @@ func InstallPrivate() error {
 		if syscall.Setrlimit(r.k, &syscall.Rlimit{Cur: r.v, Max: r.v}) != nil {
 			return errLimit
 		}
+	}
+	if spool >= 0 && syscall.Setrlimit(syscall.RLIMIT_FSIZE, &syscall.Rlimit{Cur: 1 << 30, Max: 1 << 30}) != nil {
+		return errLimit
 	}
 	if _, _, e := syscall.RawSyscall(syscall.SYS_PRCTL, 4, 0, 0); e != 0 {
 		return errKernel

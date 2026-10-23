@@ -111,6 +111,23 @@ func (r Reaper) Tick(ctx context.Context) error {
 	if v.State != "PENDING" && v.State != "RECOVERING" {
 		return ErrCleanup
 	}
+	// A valid bounded transfer is not a failed cleanup attempt. Keep the
+	// original total deadline; do not consume all three attempts while streaming.
+	active, e := r.Repo.Get(ctx, r.JobID)
+	if e != nil || active == nil {
+		return ErrUnknown
+	}
+	if active.Artifact == "RUNNING" && active.TransferStarted && active.TransferUntil > now && active.TransferUntil < v.Until {
+		next := v
+		next.Version++
+		next.Due = active.TransferUntil
+		next.State = "PENDING"
+		next.LeaseUntil = 0
+		if e = r.save(ctx, &v, next); e != nil {
+			return e
+		}
+		return ErrConflict
+	}
 	next := v
 	next.Version++
 	if now >= v.Until || v.Attempts >= 3 {

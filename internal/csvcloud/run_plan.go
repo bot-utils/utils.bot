@@ -20,10 +20,11 @@ type RunPlan struct {
 	RunID, JobID, Account, WorkerImage, BrokerImage  string
 	Created, Until, ResourcesUntil, ReservedMicroUSD int64
 	SyntheticOnly                                    bool
+	Stream                                           bool
 }
 
 func (p RunPlan) valid(now int64) bool {
-	w := WireReview{Account: p.Account, RunID: p.RunID, Image: p.WorkerImage, ExecutionRole: "arn:aws:iam::" + p.Account + ":role/utils-bot-csv-private-" + prefix(p.RunID, 16) + "-worker-execution", SecretARN: "arn:aws:ssm:us-east-2:" + p.Account + ":parameter/utils-bot/csv-private/" + p.RunID + "/tls", SyntheticOnly: p.SyntheticOnly}
+	w := WireReview{Account: p.Account, RunID: p.RunID, Image: p.WorkerImage, ExecutionRole: "arn:aws:iam::" + p.Account + ":role/utils-bot-csv-private-" + prefix(p.RunID, 16) + "-worker-execution", SecretARN: "arn:aws:ssm:us-east-2:" + p.Account + ":parameter/utils-bot/csv-private/" + p.RunID + "/tls", SyntheticOnly: p.SyntheticOnly, Stream: p.Stream}
 	_, e := (BrokerReview{Worker: w, Image: p.BrokerImage}).Definition()
 	return p.Subnet == privateTrialSubnet && p.SecurityGroup == privateTrialSecurityGroup && w.valid() && e == nil && opaque(p.JobID) && p.SyntheticOnly && p.ReservedMicroUSD == 10_000_000 && p.Created > 0 && p.Created <= now && p.Until == p.Created+600 && p.ResourcesUntil >= p.Until && p.ResourcesUntil <= p.Created+7200 && now < p.Until
 }
@@ -59,7 +60,7 @@ func (p RunPlan) check(ctx context.Context, r Repository, now time.Time) error {
 // StartWorker requires the same committed run reservation and budget-bearing job
 // as the reviewed Runner. It never manufactures another dispatch token.
 func (p RunPlan) StartWorker(ctx context.Context, r Runner, m Message, now time.Time) error {
-	if p.check(ctx, r.Repo, now) != nil || r.Wire == nil || r.Wire.RunID != p.RunID || r.Wire.Image != p.WorkerImage || m.JobID != p.JobID || r.Subnet != p.Subnet || r.SecurityGroup != p.SecurityGroup || r.Cluster != "arn:aws:ecs:us-east-2:"+p.Account+":cluster/utils-bot-csv-trial" {
+	if p.check(ctx, r.Repo, now) != nil || r.Wire == nil || r.Wire.RunID != p.RunID || r.Wire.Image != p.WorkerImage || r.Wire.Stream != p.Stream || m.JobID != p.JobID || r.Subnet != p.Subnet || r.SecurityGroup != p.SecurityGroup || r.Cluster != "arn:aws:ecs:us-east-2:"+p.Account+":cluster/utils-bot-csv-trial" {
 		return ErrInvalid
 	}
 	j, e := r.Repo.Get(ctx, m.JobID)
@@ -76,7 +77,7 @@ func (p RunPlan) StartWorker(ctx context.Context, r Runner, m Message, now time.
 // Lost responses stay STARTING and require read-only exact-token reconciliation;
 // this method never retries or mints a new token.
 func (p RunPlan) StartBroker(ctx context.Context, r Repository, client ECSAPI, review BrokerReview, definition, hash, subnet, group string, now time.Time) (string, error) {
-	if p.check(ctx, r, now) != nil || client == nil || review.Worker.RunID != p.RunID || review.Image != p.BrokerImage || subnet != p.Subnet || group != p.SecurityGroup || !opaque(hash) {
+	if p.check(ctx, r, now) != nil || client == nil || review.Worker.RunID != p.RunID || review.Worker.Stream != p.Stream || review.Image != p.BrokerImage || subnet != p.Subnet || group != p.SecurityGroup || !opaque(hash) {
 		return "", ErrInvalid
 	}
 	j, e := r.Get(ctx, p.JobID)

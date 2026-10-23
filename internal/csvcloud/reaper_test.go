@@ -122,3 +122,25 @@ func TestSyntheticRetirementResumesReadyReaperWithoutReprocessing(t *testing.T) 
 		t.Fatal("result replayed or not erased")
 	}
 }
+
+func TestReaperDoesNotSpendCleanupAttemptsDuringBoundedTransfer(t *testing.T) {
+	p, j, _, _, _ := processorFixture(t)
+	old := readJob(t, p.Repo, j.ID)
+	active, e := p.Repo.claimTransfer(ctx, old, fixtureTime.Add(5*time.Minute).Unix())
+	if e != nil {
+		t.Fatal(e)
+	}
+	now := fixtureTime
+	r := Reaper{Repo: p.Repo, RunID: ID(), JobID: j.ID, Now: func() time.Time { return now }, Recover: func(context.Context, string) error { t.Fatal("active transfer cleanup"); return nil }}
+	if r.Schedule(ctx, fixtureTime.Add(2*time.Minute).Unix()) != nil {
+		t.Fatal("schedule")
+	}
+	now = fixtureTime.Add(2 * time.Minute)
+	if r.Tick(ctx) != ErrConflict {
+		t.Fatal("active transfer not deferred")
+	}
+	v, e := r.read(ctx)
+	if e != nil || v.Attempts != 0 || v.Due != active.TransferUntil || v.Until != fixtureTime.Add(10*time.Minute).Unix() {
+		t.Fatal("attempts consumed or lifetime extended", e)
+	}
+}

@@ -14,11 +14,13 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"os"
 	"testing"
 	"time"
 )
 
-func identities(t *testing.T) ([]byte, *tls.Config) {
+func identities(t *testing.T) ([]byte, *tls.Config) { return identitiesVersion(t, 0) }
+func identitiesVersion(t *testing.T, version int) ([]byte, *tls.Config) {
 	t.Helper()
 	now := time.Now()
 	caKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -44,11 +46,11 @@ func identities(t *testing.T) ([]byte, *tls.Config) {
 	}
 	server, key, serverDER := makeCert(false)
 	client, ck, clientDER := makeCert(true)
-	raw, _ := json.Marshal(Bootstrap{Certificate: string(server), PrivateKey: string(key), ClientCA: string(caPEM), PeerSHA256: hash(clientDER)})
+	raw, _ := json.Marshal(Bootstrap{Version: version, Certificate: string(server), PrivateKey: string(key), ClientCA: string(caPEM), PeerSHA256: hash(clientDER)})
 	if len(raw) > 4096 {
 		t.Fatal("SSM standard parameter bound")
 	}
-	clientConfig, e := ClientTLS(Bootstrap{Certificate: string(client), PrivateKey: string(ck), ClientCA: string(caPEM), PeerSHA256: hash(serverDER)}, now)
+	clientConfig, e := ClientTLS(Bootstrap{Version: version, Certificate: string(client), PrivateKey: string(ck), ClientCA: string(caPEM), PeerSHA256: hash(serverDER)}, now)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -121,5 +123,51 @@ func TestWrongJobCertificateIsRejectedBeforeInput(t *testing.T) {
 	}
 	if e = <-done; e == nil {
 		t.Fatal("wrong peer accepted")
+	}
+}
+
+func TestOneJobStreamingMTLSSession(t *testing.T) {
+	raw, client := identitiesVersion(t, 2)
+	cfg, e := ServerTLS(raw, time.Now())
+	if e != nil {
+		t.Fatal(e)
+	}
+	ln, e := net.Listen("tcp4", "127.0.0.1:0")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer ln.Close()
+	in, writer := io.Pipe()
+	reader, out := io.Pipe()
+	defer in.Close()
+	defer writer.Close()
+	defer reader.Close()
+	defer out.Close()
+	spool, e := os.CreateTemp(t.TempDir(), "spool")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer spool.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	worker, server := make(chan error, 1), make(chan error, 1)
+	go func() { _, _ = out.Write([]byte("RDY2")); e := ProcessStream(in, out, spool); out.Close(); worker <- e }()
+	go func() { server <- ServeOne(ctx, ln, cfg, writer, reader) }()
+	conn, e := net.Dial("tcp4", ln.Addr().String())
+	if e != nil {
+		t.Fatal(e)
+	}
+	q, inputs := fixture(t, "transform", `{"column":"v","op":"upper"}`, map[string]string{"file": "id,v\n1,hello\n"})
+	q.Version = 2
+	var sink bytes.Buffer
+	m, e := Exchange(ctx, tls.Client(conn, client), q, inputs, &sink)
+	if e != nil || m.Version != 2 || m.LogicalSHA256 != hash([]byte("id,v\n1,HELLO\n")) || VerifyStreamResult(m, bytes.NewReader(sink.Bytes())) != nil {
+		t.Fatal("streaming mTLS", e)
+	}
+	if e = <-server; e != nil {
+		t.Fatal(e)
+	}
+	if e = <-worker; e != nil {
+		t.Fatal(e)
 	}
 }

@@ -114,7 +114,7 @@ func foundationStack(app awscdk.App, account, region string) awscdk.Stack {
 		if csv.Account != account {
 			panic("private CSV boundary account differs")
 		}
-		for _, statement := range csvPrivateStatements(account, *csv, true) {
+		for _, statement := range csvBoundaryStatements(account, *csv) {
 			runtimeBoundary.AddStatements(statement)
 		}
 	}

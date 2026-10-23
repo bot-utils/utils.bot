@@ -5,7 +5,10 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"io"
+	"net/http"
 	"net/netip"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -29,7 +32,7 @@ func (BrokerBootstrap) String() string   { return "CSV broker bootstrap [redacte
 func (BrokerBootstrap) GoString() string { return "CSV broker bootstrap [redacted]" }
 func DecodeBroker(raw []byte, now time.Time) (BrokerBootstrap, error) {
 	var b BrokerBootstrap
-	if jsonwire.Decode(raw, &b, 8192) != nil || !opaque(b.RunID) || !opaque(b.JobID) || !b.Review.valid() || b.Account != b.Review.Account || b.RunID != b.Review.RunID || b.Table != "utils-bot-csv-private-"+b.RunID[:16] || b.Bucket != "utils-csv-"+b.Account+"-"+b.RunID[:24] || b.Cluster != "arn:aws:ecs:us-east-2:"+b.Account+":cluster/utils-bot-csv-trial" || b.Subnet != "subnet-0d1659853364bcb35" || b.Prefix != "10.88.0.0/24" || b.Until <= now.Unix() || b.Until > now.Add(10*time.Minute).Unix() || b.Request.Validate() != nil {
+	if jsonwire.Decode(raw, &b, 8192) != nil || !opaque(b.RunID) || !opaque(b.JobID) || !b.Review.valid() || b.Account != b.Review.Account || b.RunID != b.Review.RunID || b.Table != "utils-bot-csv-private-"+b.RunID[:16] || b.Bucket != "utils-csv-"+b.Account+"-"+b.RunID[:24] || b.Cluster != "arn:aws:ecs:us-east-2:"+b.Account+":cluster/utils-bot-csv-trial" || b.Subnet != "subnet-0d1659853364bcb35" || b.Prefix != "10.88.0.0/24" || b.Until <= now.Unix() || b.Until > now.Add(10*time.Minute).Unix() || b.Request.Validate() != nil || b.Review.Stream != (b.Request.Version == 2) || (b.Request.Version == 2) != (b.Identity.Version == 2) {
 		return b, ErrInvalid
 	}
 	key, e := base64.StdEncoding.DecodeString(b.NetworkPublicKey)
@@ -53,6 +56,15 @@ func ProcessSyntheticBroker(ctx context.Context, b BrokerBootstrap, data aws.Con
 	}
 	ctx, cancel := context.WithDeadline(ctx, time.Unix(b.Until, 0))
 	defer cancel()
+	if b.Request.Version == 2 {
+		client, ok := data.HTTPClient.(*http.Client)
+		if !ok {
+			return ErrInvalid
+		}
+		copied := *client
+		copied.Timeout = 300 * time.Second
+		data.HTTPClient = &copied
+	}
 	clients, e := clients(data)
 	if e != nil {
 		return e
@@ -71,5 +83,11 @@ func ProcessSyntheticBroker(ctx context.Context, b BrokerBootstrap, data aws.Con
 	channel := NetworkChannel{Repo: repo, RunID: b.RunID, JobID: b.JobID, TaskARN: j.Dispatch.TaskARN, PublicKey: ed25519.PublicKey(pub)}
 	worker := PrivateWorker{Review: &b.Review, Client: clients.ECS, Verifier: channel, Cluster: b.Cluster, Definition: b.Definition, Subnet: b.Subnet, Prefix: netip.MustParsePrefix(b.Prefix), TLS: tlsConfig, Gate: Gate{Enabled: true}}
 	processor := Processor{Repo: repo, Objects: privateCandidateStorage{Storage{Client: clients.S3, Bucket: b.Bucket, Account: b.Account, Gate: Gate{Enabled: true}}}, Worker: worker.Session(), Gate: Gate{Enabled: true}, StageResults: true}
+	if b.Request.Version == 2 {
+		processor.StreamSpool = func() (io.ReadWriteSeeker, io.Closer, error) {
+			f, e := os.OpenFile("/spool/candidate.gz", os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
+			return f, f, e
+		}
+	}
 	return processor.Process(ctx, b.JobID, b.Request)
 }

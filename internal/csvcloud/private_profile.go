@@ -14,6 +14,7 @@ import (
 type WireReview struct {
 	Account, RunID, Image, ExecutionRole, SecretARN string
 	SyntheticOnly                                   bool
+	Stream                                          bool
 }
 
 func (w WireReview) valid() bool {
@@ -36,8 +37,18 @@ func (w WireReview) Definition() (et.TaskDefinition, error) {
 	for _, c := range []*et.ContainerDefinition{&parser, &transport} {
 		c.DependsOn = []et.ContainerDependency{{ContainerName: aws.String("fifo-init"), Condition: et.ContainerConditionSuccess}}
 	}
+	volumes := []et.Volume{{Name: aws.String("exchange")}}
+	if w.Stream {
+		init.Command = []string{"--mode", "fifo-init-stream"}
+		parser.Command = []string{"--mode", "parser-stream"}
+		transport.Command = []string{"--mode", "transport-stream"}
+		volumes = append(volumes, et.Volume{Name: aws.String("spool")})
+		mount := et.MountPoint{SourceVolume: aws.String("spool"), ContainerPath: aws.String("/spool"), ReadOnly: aws.Bool(false)}
+		init.MountPoints = append(init.MountPoints, mount)
+		parser.MountPoints = append(parser.MountPoints, mount)
+	}
 	// Omitting ephemeralStorage retains Fargate 1.4.0 default 20 GiB.
-	return et.TaskDefinition{Family: aws.String("utils-bot-csv-private-" + w.RunID[:16] + "-worker"), ExecutionRoleArn: aws.String(w.ExecutionRole), NetworkMode: et.NetworkModeAwsvpc, RequiresCompatibilities: []et.Compatibility{et.CompatibilityFargate}, Cpu: aws.String("1024"), Memory: aws.String("2048"), RuntimePlatform: &et.RuntimePlatform{CpuArchitecture: et.CPUArchitectureArm64, OperatingSystemFamily: et.OSFamilyLinux}, Volumes: []et.Volume{{Name: aws.String("exchange")}}, ContainerDefinitions: []et.ContainerDefinition{init, parser, transport}}, nil
+	return et.TaskDefinition{Family: aws.String("utils-bot-csv-private-" + w.RunID[:16] + "-worker"), ExecutionRoleArn: aws.String(w.ExecutionRole), NetworkMode: et.NetworkModeAwsvpc, RequiresCompatibilities: []et.Compatibility{et.CompatibilityFargate}, Cpu: aws.String("1024"), Memory: aws.String("2048"), RuntimePlatform: &et.RuntimePlatform{CpuArchitecture: et.CPUArchitectureArm64, OperatingSystemFamily: et.OSFamilyLinux}, Volumes: volumes, ContainerDefinitions: []et.ContainerDefinition{init, parser, transport}}, nil
 }
 
 // Validate accepts only the complete expected security profile. Provider-owned

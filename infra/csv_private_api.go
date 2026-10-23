@@ -9,8 +9,10 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsecs"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
+	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 )
 
@@ -18,6 +20,7 @@ type csvPrivateRun struct {
 	ID      string          `json:"id"`
 	Until   int64           `json:"until"`
 	Request json.RawMessage `json:"request"`
+	Parts   json.RawMessage `json:"parts,omitempty"`
 }
 type csvPrivateConfig struct {
 	Account       string          `json:"account"`
@@ -68,10 +71,10 @@ func csvPrivateSettings() (*csvPrivateConfig, string) {
 	return &c, raw
 }
 
-// The temporary ceiling uses the private namespace; the identity policy pins
-// exact pre-created runs. Both exclude input reads, result writes, dispatch,
-// IAM, payment, SSM/TLS and queue access from the shared API.
-func csvPrivateStatements(account string, c csvPrivateConfig, namespace bool) []awsiam.PolicyStatement {
+// The shared API identity pins exact pre-created runs and excludes input reads,
+// result writes, dispatch, IAM, payment, SSM/TLS and queue access. The separate
+// expiring boundary is combined below for the API and upload coordinator.
+func csvPrivateStatements(account string, c csvPrivateConfig, _ bool) []awsiam.PolicyStatement {
 	until := int64(0)
 	inputs, results, tables := []*string{}, []*string{}, []*string{}
 	for _, run := range c.Runs {
@@ -81,11 +84,6 @@ func csvPrivateStatements(account string, c csvPrivateConfig, namespace bool) []
 		inputs = append(inputs, jsii.String("arn:aws:s3:::utils-csv-"+account+"-"+run.ID[:24]+"/inputs/"+run.ID+"/*"))
 		results = append(results, jsii.String("arn:aws:s3:::utils-csv-"+account+"-"+run.ID[:24]+"/results/"+run.ID+"/*"))
 		tables = append(tables, jsii.String("arn:aws:dynamodb:us-east-2:"+account+":table/utils-bot-csv-private-"+run.ID[:16]))
-	}
-	if namespace {
-		inputs = []*string{jsii.String("arn:aws:s3:::utils-csv-" + account + "-*/inputs/*/*")}
-		results = []*string{jsii.String("arn:aws:s3:::utils-csv-" + account + "-*/results/*/*")}
-		tables = []*string{jsii.String("arn:aws:dynamodb:us-east-2:" + account + ":table/utils-bot-csv-private-*")}
 	}
 	deadline := time.Unix(until, 0).UTC().Format(time.RFC3339)
 	conditions := func() map[string]interface{} {
@@ -116,6 +114,7 @@ func bindPrivateCSV(account string, task awsecs.FargateTaskDefinition, container
 	for _, statement := range csvPrivateStatements(account, *config, false) {
 		task.AddToTaskRolePolicy(statement)
 	}
+	bindCSVUploadCoordinators(account, *config, awscdk.Stack_Of(task))
 	container.AddEnvironment(jsii.String("CSV_PRIVATE_ENABLED"), jsii.String("1"))
 	container.AddEnvironment(jsii.String("CSV_PRIVATE_CONFIG"), jsii.String(raw))
 }
@@ -138,10 +137,84 @@ func emitPrivateCSVPolicies() bool {
 		for _, statement := range csvPrivateStatements(account, *config, namespace) {
 			statements = append(statements, statement.ToStatementJson())
 		}
+		if namespace {
+			statements = nil
+			for _, statement := range csvBoundaryStatements(account, *config) {
+				statements = append(statements, statement.ToStatementJson())
+			}
+		}
 		documents[name] = map[string]interface{}{"Version": "2012-10-17", "Statement": statements}
 	}
 	if json.NewEncoder(os.Stdout).Encode(documents) != nil {
 		panic("private CSV policy export failed")
 	}
 	return true
+}
+
+// The private upload consumer has a distinct exact-run identity, never the API
+// task role. It cannot dispatch compute, assume another role, write results or
+// call payment services. The existing separately reviewed supervisor owns task
+// lifecycle. Unique-bucket deletion is limited to failed never-started jobs.
+func csvUploadStatements(account string, run csvPrivateRun, namespace bool) []awsiam.PolicyStatement {
+	bucket := "arn:aws:s3:::utils-csv-" + account + "-" + run.ID[:24]
+	table := "arn:aws:dynamodb:us-east-2:" + account + ":table/utils-bot-csv-private-" + run.ID[:16]
+	suffix := run.ID[:16]
+	inputPath, resultPath := "/inputs/"+run.ID+"/*", "/results/"+run.ID+"/*"
+	queue := "arn:aws:sqs:us-east-2:" + account + ":utils-bot-csv-private-" + run.ID[:16]
+	if namespace {
+		bucket = "arn:aws:s3:::utils-csv-" + account + "-*"
+		table = "arn:aws:dynamodb:us-east-2:" + account + ":table/utils-bot-csv-private-*"
+		queue = "arn:aws:sqs:us-east-2:" + account + ":utils-bot-csv-private-*"
+		inputPath, resultPath = "/inputs/*/*", "/results/*/*"
+		suffix = "Ceiling"
+	}
+	deadline := time.Unix(run.Until, 0).UTC().Format(time.RFC3339)
+	condition := func() map[string]interface{} {
+		return map[string]interface{}{"DateLessThan": map[string]string{"aws:CurrentTime": deadline}}
+	}
+	statement := func(sid string, actions, resources []string, conditions map[string]interface{}) awsiam.PolicyStatement {
+		return awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Sid: jsii.String(sid + suffix), Actions: jsii.Strings(actions...), Resources: jsii.Strings(resources...), Conditions: &conditions})
+	}
+	keys := []string{"JOB/" + run.ID, "API_COMPLETE/" + run.ID, "API_DELIVERY/" + run.ID, "API_RETIRE/" + run.ID, "API_UPLOAD/*", "BROKER/" + run.ID, "OUTBOX/" + run.ID, "FENCE/" + run.ID, "CAPACITY", "BUDGET", "IDEMPOTENCY/*", "NONCE/*"}
+	if namespace {
+		keys = []string{"JOB/*", "API_COMPLETE/*", "API_DELIVERY/*", "API_RETIRE/*", "API_UPLOAD/*", "BROKER/*", "OUTBOX/*", "FENCE/*", "CAPACITY", "BUDGET", "IDEMPOTENCY/*", "NONCE/*"}
+	}
+	read, write := condition(), condition()
+	read["ForAllValues:StringLike"] = map[string]interface{}{"dynamodb:LeadingKeys": keys}
+	write["ForAllValues:StringLike"] = map[string]interface{}{"dynamodb:LeadingKeys": keys}
+	write["ForAnyValue:StringEquals"] = map[string]string{"dynamodb:EnclosingOperation": "TransactWriteItems"}
+	return []awsiam.PolicyStatement{
+		statement("CsvUploadInput", []string{"s3:GetObject", "s3:PutObject", "s3:ListMultipartUploadParts", "s3:AbortMultipartUpload"}, []string{bucket + inputPath}, condition()),
+		statement("CsvUploadErase", []string{"s3:DeleteObject", "s3:AbortMultipartUpload"}, []string{bucket + inputPath, bucket + resultPath}, condition()),
+		statement("CsvUploadBucket", []string{"s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetBucketPublicAccessBlock", "s3:GetBucketOwnershipControls", "s3:GetBucketAcl", "s3:GetBucketVersioning", "s3:GetBucketObjectLockConfiguration", "s3:GetReplicationConfiguration", "s3:GetEncryptionConfiguration", "s3:GetBucketPolicy", "s3:DeleteBucket"}, []string{bucket}, condition()),
+		statement("CsvUploadRead", []string{"dynamodb:GetItem"}, []string{table}, read),
+		statement("CsvUploadTransaction", []string{"dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:ConditionCheckItem"}, []string{table}, write),
+		statement("CsvUploadQueue", []string{"sqs:SendMessage"}, []string{queue}, condition()),
+	}
+}
+func bindCSVUploadCoordinators(account string, c csvPrivateConfig, scope constructs.Construct) {
+	for _, run := range c.Runs {
+		// This is the existing operator's exact IAM role, not the account root, API
+		// role, service principal or a wildcard PrincipalArn condition.
+		trust := awsiam.NewPrincipalWithConditions(awsiam.NewArnPrincipal(jsii.String("arn:aws:iam::"+account+":role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_LocalCLIAccess_452e4a519811dc0f")), &map[string]interface{}{"StringEquals": map[string]string{"sts:RoleSessionName": "csv-upload-" + run.ID[:16]}, "DateLessThan": map[string]string{"aws:CurrentTime": time.Unix(run.Until, 0).UTC().Format(time.RFC3339)}})
+		role := awsiam.NewRole(scope, jsii.String("CsvUpload"+run.ID[:16]), &awsiam.RoleProps{RoleName: jsii.String("AgentPdfMock-CsvUpload-" + run.ID[:16]), AssumedBy: trust, MaxSessionDuration: awscdk.Duration_Hours(jsii.Number(1)), PermissionsBoundary: awsiam.ManagedPolicy_FromManagedPolicyArn(scope, jsii.String("CsvUploadBoundary"+run.ID[:16]), jsii.String(namedPolicyArn(account, runtimeBoundaryName)))})
+		for _, s := range csvUploadStatements(account, run, false) {
+			role.AddToPolicy(s)
+		}
+	}
+}
+
+// A managed-policy boundary is limited to 6 KiB. The expiring namespace ceiling
+// is combined across roles; each identity policy still pins one exact run.
+func csvBoundaryStatements(account string, c csvPrivateConfig) []awsiam.PolicyStatement {
+	last := c.Runs[0]
+	for _, run := range c.Runs {
+		if run.Until > last.Until {
+			last = run
+		}
+	}
+	statements := csvUploadStatements(account, last, true)
+	conditions := map[string]interface{}{"DateLessThan": map[string]string{"aws:CurrentTime": time.Unix(last.Until, 0).UTC().Format(time.RFC3339)}}
+	statements = append(statements, awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{Sid: jsii.String("PrivateCsvResultReadCeiling"), Actions: jsii.Strings("s3:GetObject"), Resources: jsii.Strings("arn:aws:s3:::utils-csv-" + account + "-*/results/*/*"), Conditions: &conditions}))
+	return statements
 }

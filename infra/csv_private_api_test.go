@@ -100,3 +100,81 @@ func TestPrivateCSVDeploymentDefaultsToDisabled(t *testing.T) {
 		t.Fatal("private API enabled by default")
 	}
 }
+
+func TestPrivateUploadIdentityAndBoundaryRemainBounded(t *testing.T) {
+	defer jsii.Close()
+	c := csvInfraFixture(t)
+	raw, _ := json.Marshal(map[string]interface{}{"Version": "2012-10-17", "Statement": func() []interface{} {
+		var out []interface{}
+		for _, s := range csvBoundaryStatements(c.Account, c) {
+			out = append(out, s.ToStatementJson())
+		}
+		return out
+	}()})
+	// The observed live base is 2,106 compact bytes. Leave room for its statements
+	// while staying below IAM's 6,144 non-whitespace character limit.
+	if len(raw)+2106 > 6144 {
+		t.Fatalf("runtime boundary would exceed IAM limit: %d", len(raw)+2106)
+	}
+	for _, s := range csvUploadStatements(c.Account, c.Runs[0], false) {
+		raw, _ := json.Marshal(s.ToStatementJson())
+		text := string(raw)
+		for _, bad := range []string{"ecs:", "iam:", "sts:", "ssm:", "lambda:", "sqs:ReceiveMessage", "sqs:DeleteMessage", "s3:CreateBucket"} {
+			if strings.Contains(text, bad) {
+				t.Fatal("upload coordinator overpermission", bad)
+			}
+		}
+		if !strings.Contains(text, c.Runs[0].ID[:16]) || !strings.Contains(text, "DateLessThan") {
+			t.Fatal("unpinned coordinator permissions")
+		}
+		if strings.Contains(text, "s3:PutObject") && strings.Contains(text, "/results/") {
+			t.Fatal("coordinator can write result")
+		}
+	}
+	app := awscdk.NewApp(nil)
+	stack := awscdk.NewStack(app, jsii.String("CsvCoordinatorTrust"), nil)
+	bindCSVUploadCoordinators(c.Account, c, stack)
+	template := assertions.Template_FromStack(stack, nil)
+	template.HasResourceProperties(jsii.String("AWS::IAM::Role"), map[string]interface{}{
+		"RoleName":                 "AgentPdfMock-CsvUpload-" + c.Runs[0].ID[:16],
+		"PermissionsBoundary":      namedPolicyArn(c.Account, runtimeBoundaryName),
+		"AssumeRolePolicyDocument": map[string]interface{}{"Version": "2012-10-17", "Statement": []interface{}{map[string]interface{}{"Action": "sts:AssumeRole", "Effect": "Allow", "Principal": map[string]interface{}{"AWS": "arn:aws:iam::" + c.Account + ":role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_LocalCLIAccess_452e4a519811dc0f"}, "Condition": map[string]interface{}{"StringEquals": map[string]interface{}{"sts:RoleSessionName": "csv-upload-" + c.Runs[0].ID[:16]}, "DateLessThan": map[string]interface{}{"aws:CurrentTime": time.Unix(c.Runs[0].Until, 0).UTC().Format(time.RFC3339)}}}}},
+	})
+}
+
+func TestPrivateRetirementKeyIsCoordinatorOnly(t *testing.T) {
+	defer jsii.Close()
+	c := csvInfraFixture(t)
+	for _, namespace := range []bool{false, true} {
+		statements := csvUploadStatements(c.Account, c.Runs[0], namespace)
+		want := "API_RETIRE/" + c.Runs[0].ID
+		if namespace {
+			want = "API_RETIRE/*"
+		}
+		reads, writes := 0, 0
+		for _, s := range statements {
+			raw, _ := json.Marshal(s.ToStatementJson())
+			text := string(raw)
+			if strings.Contains(text, "dynamodb:") {
+				if !strings.Contains(text, want) || strings.Contains(text, "SETTLEMENT") || strings.Contains(text, "PAYMENT") || strings.Contains(text, "DOWNLOAD/") {
+					t.Fatal("wrong retirement scope")
+				}
+				if strings.Contains(text, "dynamodb:GetItem") {
+					reads++
+				}
+				if strings.Contains(text, "dynamodb:PutItem") {
+					writes++
+				}
+			}
+		}
+		if reads != 1 || writes != 1 {
+			t.Fatal("retirement read/write missing")
+		}
+	}
+	for _, s := range csvPrivateStatements(c.Account, c, false) {
+		raw, _ := json.Marshal(s.ToStatementJson())
+		if strings.Contains(string(raw), "API_RETIRE") {
+			t.Fatal("API received retirement permission")
+		}
+	}
+}

@@ -17,11 +17,16 @@ import (
 
 const exchange = "/exchange"
 
-func initPipes() error {
+func initPipes() error       { return initPipesMode(false) }
+func initStreamPipes() error { return initPipesMode(true) }
+func initPipesMode(stream bool) error {
 	if os.Getuid() != 0 || !guard.NoCredentials() || guard.CheckCapabilities(1) != nil {
 		return csvwire.ErrWorker
 	}
 	if guard.Install() != nil {
+		return csvwire.ErrWorker
+	}
+	if stream && (os.Chmod("/spool", 0700) != nil || os.Chown("/spool", 65533, 65533) != nil) {
 		return csvwire.ErrWorker
 	}
 	if os.Chmod(exchange, 0711) != nil {
@@ -93,7 +98,9 @@ func openPipes(ctx context.Context, parser bool) (*os.File, *os.File, error) {
 	}
 	return in, out, nil
 }
-func parser(ctx context.Context, probe bool) error {
+func parser(ctx context.Context, probe bool) error { return parserMode(ctx, probe, false) }
+func streamParser(ctx context.Context) error       { return parserMode(ctx, false, true) }
+func parserMode(ctx context.Context, probe, stream bool) error {
 	if os.Getuid() != 65533 || !guard.NoCredentials() {
 		return csvwire.ErrWorker
 	}
@@ -112,7 +119,18 @@ func parser(ctx context.Context, probe bool) error {
 	if in.SetReadDeadline(deadline) != nil || out.SetWriteDeadline(deadline) != nil {
 		return csvwire.ErrWorker
 	}
-	if guard.InstallPrivate() != nil {
+	var spool *os.File
+	if stream {
+		fd, e := syscall.Open("/spool/result.gz", syscall.O_RDWR|syscall.O_CREAT|syscall.O_EXCL|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0600)
+		if e != nil {
+			return csvwire.ErrWorker
+		}
+		spool = os.NewFile(uintptr(fd), "private-spool")
+		defer spool.Close()
+		if guard.InstallPrivateSpool(fd) != nil {
+			return csvwire.ErrWorker
+		}
+	} else if guard.InstallPrivate() != nil {
 		return csvwire.ErrWorker
 	}
 	checks := probes()
@@ -124,8 +142,15 @@ func parser(ctx context.Context, probe bool) error {
 	if probe {
 		return emitProbe(out, checks)
 	}
-	if _, e = out.Write([]byte("RDY1")); e != nil {
+	ready := "RDY1"
+	if stream {
+		ready = "RDY2"
+	}
+	if _, e = out.Write([]byte(ready)); e != nil {
 		return csvwire.ErrWorker
+	}
+	if stream {
+		return csvwire.ProcessStream(in, out, spool)
 	}
 	return csvwire.Process(in, out)
 }
@@ -186,8 +211,23 @@ func probes() map[string]bool {
 	return checks
 }
 
-func stdio(probe bool) error {
-	if e := guard.InstallPrivate(); e != nil {
+func stdio(probe bool) error { return stdioMode(probe, false) }
+func streamStdio() error     { return stdioMode(false, true) }
+func stdioMode(probe, stream bool) error {
+	var spool *os.File
+	var setup error
+	if stream {
+		fd, e := syscall.Open("/spool/result.gz", syscall.O_RDWR|syscall.O_CREAT|syscall.O_EXCL|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0600)
+		if e != nil {
+			return csvwire.ErrWorker
+		}
+		spool = os.NewFile(uintptr(fd), "private-spool")
+		defer spool.Close()
+		setup = guard.InstallPrivateSpool(fd)
+	} else {
+		setup = guard.InstallPrivate()
+	}
+	if e := setup; e != nil {
 		if probe {
 			_ = emitProbe(os.Stdout, map[string]bool{guard.SetupReason(e): true, "sandbox_installed": false})
 		}
@@ -201,6 +241,9 @@ func stdio(probe bool) error {
 	}
 	if probe {
 		return emitProbe(os.Stdout, checks)
+	}
+	if stream {
+		return csvwire.ProcessStream(os.Stdin, os.Stdout, spool)
 	}
 	return csvwire.Process(os.Stdin, os.Stdout)
 }

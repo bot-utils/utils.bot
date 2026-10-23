@@ -15,6 +15,7 @@ import (
 // Bootstrap is an ephemeral per-run transport identity, not an AWS credential.
 // It may enter only the transport container through one approved Secrets ref.
 type Bootstrap struct {
+	Version     int    `json:"version,omitempty"`
 	Certificate string `json:"certificate"`
 	PrivateKey  string `json:"private_key"`
 	ClientCA    string `json:"client_ca"`
@@ -26,6 +27,12 @@ func (Bootstrap) GoString() string { return "CSV transport identity [redacted]" 
 func ServerTLS(raw []byte, now time.Time) (*tls.Config, error) {
 	var b Bootstrap
 	if jsonwire.Decode(raw, &b, 4096) != nil || !digest(b.PeerSHA256) {
+		return nil, ErrWire
+	}
+	protocol := Protocol
+	if b.Version == 2 {
+		protocol = StreamProtocol
+	} else if b.Version != 0 && b.Version != 1 {
 		return nil, ErrWire
 	}
 	cert, e := tls.X509KeyPair([]byte(b.Certificate), []byte(b.PrivateKey))
@@ -40,8 +47,8 @@ func ServerTLS(raw []byte, now time.Time) (*tls.Config, error) {
 	if !roots.AppendCertsFromPEM([]byte(b.ClientCA)) {
 		return nil, ErrWire
 	}
-	return &tls.Config{MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13, Certificates: []tls.Certificate{cert}, ClientCAs: roots, ClientAuth: tls.RequireAndVerifyClientCert, NextProtos: []string{Protocol}, SessionTicketsDisabled: true, VerifyConnection: func(s tls.ConnectionState) error {
-		if s.NegotiatedProtocol != Protocol || len(s.PeerCertificates) != 1 {
+	return &tls.Config{MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13, Certificates: []tls.Certificate{cert}, ClientCAs: roots, ClientAuth: tls.RequireAndVerifyClientCert, NextProtos: []string{protocol}, SessionTicketsDisabled: true, VerifyConnection: func(s tls.ConnectionState) error {
+		if s.NegotiatedProtocol != protocol || len(s.PeerCertificates) != 1 {
 			return ErrWire
 		}
 		h := sha256.Sum256(s.PeerCertificates[0].Raw)
@@ -78,7 +85,16 @@ func ServeOne(ctx context.Context, ln net.Listener, config *tls.Config, input io
 	c := tls.Server(conn, config)
 	stop := context.AfterFunc(ctx, func() { c.Close() })
 	defer stop()
-	_ = c.SetDeadline(time.Now().Add(60 * time.Second))
+	stream := len(config.NextProtos) == 1 && config.NextProtos[0] == StreamProtocol
+	duration := 60 * time.Second
+	inputCap, outputCap := int64(2*MaxInput), int64(MaxOutput)
+	readyMarker := "RDY1"
+	if stream {
+		duration = 300 * time.Second
+		inputCap, outputCap = MaxStreamBytes, MaxStreamBytes
+		readyMarker = "RDY2"
+	}
+	_ = c.SetDeadline(time.Now().Add(duration))
 	if e = c.HandshakeContext(ctx); e != nil {
 		return ErrWire
 	}
@@ -94,18 +110,18 @@ func ServeOne(ctx context.Context, ln net.Listener, config *tls.Config, input io
 				continue
 			}
 		}
-		if err != nil || string(ready[:]) != "RDY1" {
+		if err != nil || string(ready[:]) != readyMarker {
 			return ErrWorker
 		}
 		break
 	}
-	n, e := io.Copy(input, io.LimitReader(c, 2*MaxInput+MaxHeader+5))
+	n, e := io.Copy(input, io.LimitReader(c, inputCap+MaxHeader+5))
 	ce := input.Close()
-	if e != nil || ce != nil || n > 2*MaxInput+MaxHeader+4 {
+	if e != nil || ce != nil || n > inputCap+MaxHeader+4 {
 		return ErrWire
 	}
-	n, e = io.Copy(c, io.LimitReader(output, MaxOutput+MaxHeader+5))
-	if e != nil || n > MaxOutput+MaxHeader+4 {
+	n, e = io.Copy(c, io.LimitReader(output, outputCap+MaxHeader+5))
+	if e != nil || n > outputCap+MaxHeader+4 {
 		return ErrWire
 	}
 	if e = c.CloseWrite(); e != nil {
@@ -120,12 +136,21 @@ func Exchange(ctx context.Context, c *tls.Conn, q Request, inputs map[string]io.
 	defer c.Close()
 	stop := context.AfterFunc(ctx, func() { c.Close() })
 	defer stop()
-	if c.HandshakeContext(ctx) != nil || c.ConnectionState().NegotiatedProtocol != Protocol {
+	protocol := Protocol
+	duration := 60 * time.Second
+	if q.Version == 2 {
+		protocol = StreamProtocol
+		duration = 300 * time.Second
+	}
+	if q.Validate() != nil || c.HandshakeContext(ctx) != nil || c.ConnectionState().NegotiatedProtocol != protocol {
 		return Result{}, ErrWire
 	}
-	_ = c.SetDeadline(time.Now().Add(60 * time.Second))
+	_ = c.SetDeadline(time.Now().Add(duration))
 	if WriteRequest(c, q, inputs) != nil || c.CloseWrite() != nil {
 		return Result{}, ErrWire
+	}
+	if q.Version == 2 {
+		return ReadStreamResult(c, sink)
 	}
 	return ReadResult(c, sink)
 }
@@ -133,6 +158,12 @@ func Exchange(ctx context.Context, c *tls.Conn, q Request, inputs map[string]io.
 // ClientTLS verifies the per-job server certificate, normal CA validation and
 // exact leaf pin. No server-selected origin, system roots or insecure mode.
 func ClientTLS(b Bootstrap, now time.Time) (*tls.Config, error) {
+	protocol := Protocol
+	if b.Version == 2 {
+		protocol = StreamProtocol
+	} else if b.Version != 0 && b.Version != 1 {
+		return nil, ErrWire
+	}
 	cert, e := tls.X509KeyPair([]byte(b.Certificate), []byte(b.PrivateKey))
 	if e != nil || len(cert.Certificate) != 1 || !digest(b.PeerSHA256) {
 		return nil, ErrWire
@@ -145,8 +176,8 @@ func ClientTLS(b Bootstrap, now time.Time) (*tls.Config, error) {
 	if !roots.AppendCertsFromPEM([]byte(b.ClientCA)) {
 		return nil, ErrWire
 	}
-	return &tls.Config{MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13, RootCAs: roots, ServerName: "csv-worker", Certificates: []tls.Certificate{cert}, NextProtos: []string{Protocol}, SessionTicketsDisabled: true, VerifyConnection: func(s tls.ConnectionState) error {
-		if s.NegotiatedProtocol != Protocol || len(s.PeerCertificates) != 1 || len(s.VerifiedChains) == 0 {
+	return &tls.Config{MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13, RootCAs: roots, ServerName: "csv-worker", Certificates: []tls.Certificate{cert}, NextProtos: []string{protocol}, SessionTicketsDisabled: true, VerifyConnection: func(s tls.ConnectionState) error {
+		if s.NegotiatedProtocol != protocol || len(s.PeerCertificates) != 1 || len(s.VerifiedChains) == 0 {
 			return ErrWire
 		}
 		h := sha256.Sum256(s.PeerCertificates[0].Raw)

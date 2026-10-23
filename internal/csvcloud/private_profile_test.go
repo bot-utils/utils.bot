@@ -126,3 +126,40 @@ func TestProviderDefaultsValidateWithoutMutatingPinnedDefinition(t *testing.T) {
 		}
 	}
 }
+
+func TestStreamingProfilesKeepSpoolAndCredentialsSeparate(t *testing.T) {
+	w := privateReview()
+	small, _ := w.Definition()
+	w.Stream = true
+	large, e := w.Definition()
+	if e != nil || w.Validate(&large) != nil || w.Validate(&small) == nil {
+		t.Fatal("streaming profile confused with v1")
+	}
+	if large.TaskRoleArn != nil || len(large.Volumes) != 2 || len(large.ContainerDefinitions) != 3 {
+		t.Fatal("streaming worker shape")
+	}
+	parser, transport := large.ContainerDefinitions[1], large.ContainerDefinitions[2]
+	if len(parser.Secrets) != 0 || len(parser.MountPoints) != 2 || len(transport.MountPoints) != 1 || len(transport.Secrets) != 1 {
+		t.Fatal("spool or credential leak")
+	}
+	raw, _ := json.Marshal(large)
+	var drift et.TaskDefinition
+	_ = json.Unmarshal(raw, &drift)
+	drift.ContainerDefinitions[2].MountPoints = append(drift.ContainerDefinitions[2].MountPoints, parser.MountPoints[1])
+	if w.Validate(&drift) == nil {
+		t.Fatal("transport gained parser spool")
+	}
+	broker := BrokerReview{Worker: w, Image: w.Image}
+	d, e := broker.Definition()
+	if e != nil || broker.Validate(&d) != nil || len(d.ContainerDefinitions) != 2 || len(d.Volumes) != 1 {
+		t.Fatal("broker streaming definition")
+	}
+	init := d.ContainerDefinitions[0]
+	if len(init.Secrets) != 0 || len(init.Environment) != 0 || aws.ToString(init.User) != "0:0" || aws.ToBool(init.Essential) {
+		t.Fatal("broker init capabilities")
+	}
+	registration, e := broker.Registration()
+	if e != nil || len(registration.Volumes) != 1 {
+		t.Fatal("broker spool omitted at registration")
+	}
+}

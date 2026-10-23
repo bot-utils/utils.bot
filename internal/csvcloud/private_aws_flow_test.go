@@ -206,8 +206,14 @@ func TestPrivateClusterPreflightRejectsInactiveMissingAndOccupied(t *testing.T) 
 // TestPrivateAWSFlow uses only pre-created isolated resources. IAM/trust creation
 // is deliberately outside this test. A private operator acknowledgement follows
 // independent exact-worker lifecycle-policy readback, before broker dispatch.
-func TestPrivateAWSFlow(t *testing.T) {
-	c, cfg := privateAWSInput(t, "flow")
+func TestPrivateAWSFlow(t *testing.T)     { privateAWSFlow(t, false) }
+func TestPrivateAWSHTTPFlow(t *testing.T) { privateAWSFlow(t, true) }
+func privateAWSFlow(t *testing.T, useHTTP bool) {
+	stage := "flow"
+	if useHTTP {
+		stage = "api-flow"
+	}
+	c, cfg := privateAWSInput(t, stage)
 	raw, e := os.ReadFile(c.StatePath)
 	if e != nil {
 		t.Fatal("registration state missing")
@@ -248,8 +254,32 @@ func TestPrivateAWSFlow(t *testing.T) {
 	if (RunFence{Storage: storage, Control: a.S3, PolicyHash: AbsentBucketPolicyHash}).checkBucket(ctx) != nil {
 		t.Fatal("trial bucket protections differ")
 	}
-	q, input, expected := privateJoinFixture()
+	fixture, e := privateSmallFixture(c.Operation)
+	if c.LargeTransform {
+		if !useHTTP || c.Operation != "transform" {
+			t.Fatal("large test requires explicit HTTP transform")
+		}
+		fixture, e = privateLargeTransformFixture()
+	}
+	if e != nil {
+		t.Fatal("private fixture")
+	}
+	q, input := fixture.Request, fixture.Inputs
+	var api privateAPIClient
+	if useHTTP {
+		api, e = newPrivateAPIClient(cfg)
+		if e != nil {
+			t.Fatal("private API test key missing")
+		}
+		if e = api.preflight(ctx, c.RunID); e != nil {
+			t.Fatal("private API authorization/payment-header preflight", e)
+		}
+	}
 	server, identity, e := privateIdentities(time.Now())
+	if c.LargeTransform {
+		server.Version = 2
+		identity.Version = 2
+	}
 	if e != nil {
 		t.Fatal("fixture TLS")
 	}
@@ -269,67 +299,100 @@ func TestPrivateAWSFlow(t *testing.T) {
 		t.Fatal("private recovery checkpoint")
 	}
 	now := time.Now()
-	plan := RunPlan{RunID: c.RunID, JobID: c.RunID, Account: storage.Account, Subnet: privateTrialSubnet, SecurityGroup: privateTrialSecurityGroup, WorkerImage: c.WorkerImage, BrokerImage: c.BrokerImage, Created: now.Unix(), Until: now.Add(10 * time.Minute).Unix(), ResourcesUntil: c.ResourcesUntil, ReservedMicroUSD: 10_000_000, SyntheticOnly: true}
-	if plan.Reserve(ctx, repo, now) != nil {
-		t.Fatal("durable one-shot reservation")
-	}
+	plan := RunPlan{Stream: c.LargeTransform, RunID: c.RunID, JobID: c.RunID, Account: storage.Account, Subnet: privateTrialSubnet, SecurityGroup: privateTrialSecurityGroup, WorkerImage: c.WorkerImage, BrokerImage: c.BrokerImage, Created: now.Unix(), Until: now.Add(10 * time.Minute).Unix(), ResourcesUntil: c.ResourcesUntil, ReservedMicroUSD: 10_000_000, SyntheticOnly: true}
 	job := Job{ID: c.RunID, IntentBinding: q.Binding(), Owner: "0x1111111111111111111111111111111111111111", AdmissionNonceHash: ID(), IdempotencyHash: ID(), RecoveryVerifier: ID(), CapabilityVerifier: ID(), Version: 1, Artifact: "UPLOAD_INCOMPLETE", Financial: "UNPAID", UploadUntil: now.Add(5 * time.Minute).Unix()}
 	for _, f := range q.Files {
 		job.Inputs = append(job.Inputs, Object{JobID: job.ID, ID: ID(), Slot: f.Slot, Bytes: f.Bytes, SHA256: f.SHA256})
 	}
-	if repo.Create(ctx, job, 1) != nil {
-		t.Fatal("job/capacity reservation")
-	}
-	for _, o := range job.Inputs {
-		upload := Upload{Object: o, Parts: []Part{{Number: 1, Bytes: o.Bytes, SHA256: o.SHA256}}, Expires: job.UploadUntil}
-		// Persist the CREATING key before the non-retried create call.
-		if repo.txn(ctx, []d.TransactWriteItem{{Put: &d.Put{TableName: aws.String(repo.Table), Item: map[string]d.AttributeValue{"pk": str("UPLOAD/" + o.ID), "state": str("CREATING"), "key": str(o.key(false))}, ConditionExpression: aws.String("attribute_not_exists(pk)")}}}) != nil {
-			t.Fatal("upload reservation")
+	if !useHTTP {
+		if repo.Create(ctx, job, 1) != nil {
+			t.Fatal("job/capacity reservation")
 		}
-		upload, e = storage.Begin(ctx, upload)
+		for _, o := range job.Inputs {
+			upload := Upload{Object: o, Parts: []Part{{Number: 1, Bytes: o.Bytes, SHA256: o.SHA256}}, Expires: job.UploadUntil}
+			// Persist the CREATING key before the non-retried create call.
+			if repo.txn(ctx, []d.TransactWriteItem{{Put: &d.Put{TableName: aws.String(repo.Table), Item: map[string]d.AttributeValue{"pk": str("UPLOAD/" + o.ID), "state": str("CREATING"), "key": str(o.key(false))}, ConditionExpression: aws.String("attribute_not_exists(pk)")}}}) != nil {
+				t.Fatal("upload reservation")
+			}
+			upload, e = storage.Begin(ctx, upload)
+			if e != nil {
+				t.Fatal("upload create uncertain")
+			}
+			saved, _ := json.Marshal(upload)
+			if os.WriteFile(c.StatePath+".upload-"+o.Slot, saved, 0600) != nil {
+				t.Fatal("upload checkpoint")
+			}
+			grant, e := storage.Grant(ctx, upload, 1, time.Now())
+			if e != nil {
+				t.Fatal("part grant")
+			}
+			request, _ := http.NewRequestWithContext(ctx, "PUT", grant.URL, bytes.NewReader(input[o.Slot]))
+			request.ContentLength = o.Bytes
+			request.Header = http.Header(grant.Headers).Clone()
+			response, e := cfg.HTTPClient.Do(request)
+			if e != nil {
+				t.Fatal("part transfer uncertain")
+			}
+			io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+			response.Body.Close()
+			if response.StatusCode != 200 {
+				t.Fatal("part transfer rejected", response.StatusCode)
+			}
+			if _, e = storage.Complete(ctx, upload); e != nil {
+				t.Fatal("multipart completion uncertain", e)
+			}
+		}
+		if (Artifacts{Repo: repo, Inputs: storage, Gate: Gate{Enabled: true}}).AcceptUploads(ctx, job.ID) != nil {
+			t.Fatal("whole input verification")
+		}
+		t.Log("PRIVATE_UPLOADS_VERIFIED bytes=1048576 files=2")
+		jobPtr, e := repo.Get(ctx, job.ID)
+		if e != nil || jobPtr == nil {
+			t.Fatal("job readback")
+		}
+		job, e = repo.Queue(ctx, *jobPtr, ID(), 10_000_000, 10_000_000)
 		if e != nil {
-			t.Fatal("upload create uncertain")
+			t.Fatal("cost/outbox reservation")
 		}
-		saved, _ := json.Marshal(upload)
-		if os.WriteFile(c.StatePath+".upload-"+o.Slot, saved, 0600) != nil {
-			t.Fatal("upload checkpoint")
-		}
-		grant, e := storage.Grant(ctx, upload, 1, time.Now())
+	} else {
+		uploadVerifier := VerifierProcess{Executable: verifierPath, BinarySHA: verifierSHA, RunID: c.RunID, JobID: c.RunID, Key: signingKey, Credentials: aws.CredentialsProviderFunc(func(context.Context) (aws.Credentials, error) {
+			return aws.Credentials{AccessKeyID: credential.AccessKeyID, SecretAccessKey: credential.SecretAccessKey, SessionToken: credential.SessionToken, CanExpire: true, Expires: credential.Expires}, nil
+		})}
+		consumed, e := startPrivateUploadConsumer(ctx, PrivateAPIRun{ID: c.RunID, Until: c.ResourcesUntil, Request: q, Parts: fixture.Parts}, uploadVerifier)
 		if e != nil {
-			t.Fatal("part grant")
+			t.Fatal("distinct upload coordinator process", e)
 		}
-		request, _ := http.NewRequestWithContext(ctx, "PUT", grant.URL, bytes.NewReader(input[o.Slot]))
-		request.ContentLength = o.Bytes
-		request.Header = http.Header(grant.Headers).Clone()
-		response, e := cfg.HTTPClient.Do(request)
-		if e != nil {
-			t.Fatal("part transfer uncertain")
+		if _, e := api.admit(ctx, c.RunID, fixture, storage); e != nil {
+			t.Fatal("private HTTP upload flow", e)
 		}
-		io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
-		response.Body.Close()
-		if response.StatusCode != 200 {
-			t.Fatal("part transfer rejected", response.StatusCode)
+		if e := <-consumed; e != nil {
+			t.Fatal("bounded upload completion consumer", e)
 		}
-		if _, e = storage.Complete(ctx, upload); e != nil {
-			t.Fatal("multipart completion uncertain", e)
+		observed, e := repo.Get(ctx, c.RunID)
+		if e != nil || observed == nil || observed.IntentBinding != q.Binding() || observed.Artifact != "QUEUED" {
+			t.Fatal("HTTP job/outbox binding")
 		}
+		job = *observed
+		t.Logf("PRIVATE_API_UPLOADS_VERIFIED operation=%s files=%d", q.Operation, len(q.Files))
 	}
-	if (Artifacts{Repo: repo, Inputs: storage, Gate: Gate{Enabled: true}}).AcceptUploads(ctx, job.ID) != nil {
-		t.Fatal("whole input verification")
-	}
-	t.Log("PRIVATE_UPLOADS_VERIFIED bytes=1048576 files=2")
-	jobPtr, e := repo.Get(ctx, job.ID)
-	if e != nil || jobPtr == nil {
-		t.Fatal("job readback")
-	}
-	job, e = repo.Queue(ctx, *jobPtr, ID(), 10_000_000, 10_000_000)
-	if e != nil {
-		t.Fatal("cost/outbox reservation")
+	now = time.Now()
+	plan.Created = now.Unix()
+	plan.Until = now.Add(10 * time.Minute).Unix()
+	if plan.Reserve(ctx, repo, now) != nil {
+		t.Fatal("durable one-shot compute reservation")
 	}
 	queue := Queue{Client: a.SQS, URL: "https://sqs.us-east-2.amazonaws.com/818416606421/" + repo.Table, Repo: repo, Gate: Gate{Enabled: true}}
-	if queue.Publish(ctx, job.ID) != nil || queue.Publish(ctx, job.ID) != ErrConflict {
+	if !useHTTP && queue.Publish(ctx, job.ID) != nil {
 		t.Fatal("one-shot queue publish")
 	}
+	if queue.Publish(ctx, job.ID) != ErrConflict {
+		t.Fatal("duplicate queue publish")
+	}
+	jobPtr, e := repo.Get(ctx, job.ID)
+	if e != nil || jobPtr == nil {
+		t.Fatal("queued job readback")
+	}
+
 	messages, e := a.SQS.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{QueueUrl: aws.String(queue.URL), MaxNumberOfMessages: 1, WaitTimeSeconds: 10})
 	if e != nil || len(messages.Messages) != 1 {
 		t.Fatal("private queue receive")
@@ -390,7 +453,7 @@ func TestPrivateAWSFlow(t *testing.T) {
 				_ = controller.FinalizeCandidate(ctx)
 				current, err := repo.Get(ctx, job.ID)
 				if err == nil && current != nil && current.Artifact == "RESULT_PREPARED" {
-					if current.Financial != "AWAITING_PAYMENT" || current.Settlement != nil || !current.WorkerStopped || current.Result == nil || current.Result.LogicalSHA256 != Hash(expected) || current.Result.Rows != 1024 {
+					if current.Financial != "AWAITING_PAYMENT" || current.Settlement != nil || !current.WorkerStopped || current.Result == nil || current.Result.LogicalSHA256 != fixture.logicalSHA() || current.Result.Rows != fixture.Rows {
 						done <- ErrIntegrity
 						return
 					}
@@ -405,6 +468,24 @@ func TestPrivateAWSFlow(t *testing.T) {
 					if _, err = repo.ReserveDownload(ctx, *current, ID(), 0, 0, time.Now().Unix()); err != ErrConflict {
 						done <- ErrIntegrity
 						return
+					}
+					if useHTTP {
+						if err = api.verifyResult(ctx, *current, fixture); err != nil {
+							done <- err
+							return
+						}
+						t.Logf("PRIVATE_API_FLOW_VERIFIED operation=%s unpaid_rejected=true simulated_payment=true gzip_download=true", q.Operation)
+						// Finish must be observed before synthetic retirement;
+						// no active lease may be erased by the controller.
+						backend := PrivateRunBackend{RunID: c.RunID, Repo: repo}
+						until := time.Now().Add(10 * time.Second)
+						for time.Now().Before(until) {
+							delivery, e := backend.delivery(ctx)
+							if e == nil && delivery.State == "COMPLETE" && delivery.Lease == "" {
+								break
+							}
+							time.Sleep(100 * time.Millisecond)
+						}
 					}
 					sawResult = true
 					if controller.FinishSynthetic(ctx) != nil {

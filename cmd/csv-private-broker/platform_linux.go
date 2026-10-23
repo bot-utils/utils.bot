@@ -3,6 +3,7 @@
 package main
 
 import (
+	"os"
 	guard "pdfservice/internal/csvguard"
 	"syscall"
 )
@@ -15,4 +16,17 @@ func harden() error {
 		return e
 	}
 	return syscall.Setrlimit(syscall.RLIMIT_CORE, &syscall.Rlimit{})
+}
+
+func initSpool() error {
+	if os.Getuid() != 0 || guard.CheckCapabilities(1) != nil {
+		return syscall.EPERM
+	}
+	if guard.Install() != nil {
+		return syscall.EPERM
+	}
+	if os.Chmod("/spool", 0700) != nil || os.Chown("/spool", 65532, 65532) != nil {
+		return syscall.EPERM
+	}
+	return nil
 }
