@@ -438,11 +438,15 @@ func TestPrivateAWSFlow(t *testing.T) {
 							done <- ErrCleanup
 							return
 						}
-						if deleted && result != 404 {
+						// A held request can return 200 after deletion. The safety
+						// contract is independently rejected object access,
+						// rejected fresh writes/replay, and converged bucket
+						// absence before Cleanup releases capacity.
+						if deleted && late.accessBlocked(ctx, a, storage) != nil {
 							done <- ErrIntegrity
 							return
 						}
-						lateVerified = deleted && result == 404
+						lateVerified = deleted
 						t.Logf("PRIVATE_LATE_PUT after_delete_ack=%t status=%d capacity_held=true", deleted, result)
 					case <-ctx.Done():
 						done <- ErrCleanup
@@ -540,11 +544,29 @@ func TestPrivateAWSFlow(t *testing.T) {
 type privateLatePut struct {
 	release func()
 	done    chan int
+	key     string
+	replay  func() int
+}
+
+func (p *privateLatePut) accessBlocked(ctx context.Context, a AWSClients, storage Storage) error {
+	out, err := a.S3.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(storage.Bucket), Key: aws.String(p.key), ExpectedBucketOwner: aws.String(storage.Account)}, noS3Retry)
+	if out != nil && out.Body != nil {
+		out.Body.Close()
+	}
+	if !apiCode(err, "NoSuchBucket") {
+		return ErrIntegrity
+	}
+	_, err = a.S3.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(storage.Bucket), Key: aws.String(p.key), Body: bytes.NewReader([]byte("synthetic replay\n")), ExpectedBucketOwner: aws.String(storage.Account), ServerSideEncryption: "AES256", IfNoneMatch: aws.String("*")}, noS3Retry)
+	if !apiCode(err, "NoSuchBucket") || p.replay() != 404 {
+		return ErrIntegrity
+	}
+	return nil
 }
 
 func beginPrivateLatePut(ctx context.Context, a AWSClients, storage Storage, job string) (*privateLatePut, error) {
 	payload := []byte("synthetic late result\n")
-	signed, e := a.Parts.PresignPutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(storage.Bucket), Key: aws.String("results/" + job + "/" + ID()), ExpectedBucketOwner: aws.String(storage.Account), ContentLength: aws.Int64(int64(len(payload))), ChecksumSHA256: aws.String(checksum(Hash(payload))), IfNoneMatch: aws.String("*"), ServerSideEncryption: "AES256"}, func(o *s3.PresignOptions) { o.Expires = time.Minute })
+	key := "results/" + job + "/" + ID()
+	signed, e := a.Parts.PresignPutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(storage.Bucket), Key: aws.String(key), ExpectedBucketOwner: aws.String(storage.Account), ContentLength: aws.Int64(int64(len(payload))), ChecksumSHA256: aws.String(checksum(Hash(payload))), IfNoneMatch: aws.String("*"), ServerSideEncryption: "AES256"}, func(o *s3.PresignOptions) { o.Expires = time.Minute })
 	if e != nil {
 		return nil, ErrCleanup
 	}
@@ -591,7 +613,24 @@ func beginPrivateLatePut(ctx context.Context, a AWSClients, storage Storage, job
 	}()
 	select {
 	case <-ready:
-		return &privateLatePut{release: releaseBody, done: done}, nil
+		replay := func() int {
+			req, err := http.NewRequestWithContext(ctx, "PUT", signed.URL, bytes.NewReader(payload))
+			if err != nil {
+				return 0
+			}
+			req.Header = signed.SignedHeader.Clone()
+			resp, err := client.Do(req)
+			if err != nil {
+				return 0
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			if resp.StatusCode != 404 || !bytes.Contains(body, []byte("<Code>NoSuchBucket</Code>")) {
+				return 0
+			}
+			return 404
+		}
+		return &privateLatePut{release: releaseBody, done: done, key: key, replay: replay}, nil
 	case <-time.After(5 * time.Second):
 		releaseBody()
 		return nil, ErrCleanup
@@ -637,4 +676,54 @@ func TestPrivateBootstrapFitsSecretBoundsAndAuthenticatesClient(t *testing.T) {
 	if !worker.valid(dispatch) {
 		t.Fatal("production client TLS and worker validation disagree")
 	}
+}
+
+// Supervised retirement of an already attempted synthetic run. This never
+// resets the durable recovery lease, starts a task, uploads input or settles.
+// Passing this cleanup check does not turn a failed flow into a passing one.
+func TestPrivateAWSSupervisedCleanup(t *testing.T) {
+	c, cfg := privateAWSInput(t, "cleanup")
+	raw, err := os.ReadFile(c.StatePath + ".recovery")
+	var checkpoint struct {
+		State          privateAWSState
+		ProofKey       []byte
+		Server, Client csvwire.Bootstrap
+		Control        ControllerConfig
+	}
+	if err != nil || jsonwire.Decode(raw, &checkpoint, 32<<10) != nil || checkpoint.State.Config != c || checkpoint.Control.RunID != c.RunID || checkpoint.Control.JobID != c.RunID || len(checkpoint.ProofKey) != ed25519.PrivateKeySize {
+		t.Fatal("original recovery checkpoint missing or mismatched")
+	}
+	var credential struct {
+		AccessKeyID, SecretAccessKey, SessionToken string
+		Expires                                    time.Time
+	}
+	if jsonwire.Decode([]byte(os.Getenv("CSV_PRIVATE_VERIFIER_CREDENTIALS")), &credential, 8192) != nil || credential.Expires.Before(time.Now().Add(time.Minute)) {
+		t.Fatal("read-only verifier session unavailable")
+	}
+	v := VerifierProcess{Executable: os.Getenv("CSV_PRIVATE_VERIFIER_PATH"), BinarySHA: os.Getenv("CSV_PRIVATE_VERIFIER_SHA"), RunID: c.RunID, JobID: c.RunID, Key: checkpoint.ProofKey, Credentials: aws.CredentialsProviderFunc(func(context.Context) (aws.Credentials, error) {
+		return aws.Credentials{AccessKeyID: credential.AccessKeyID, SecretAccessKey: credential.SecretAccessKey, SessionToken: credential.SessionToken, CanExpire: true, Expires: credential.Expires}, nil
+	})}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	controller, err := AssembleController(ctx, checkpoint.Control, cfg, v)
+	if err != nil {
+		t.Fatal("original controller binding", err)
+	}
+	job, err := controller.Repo.Get(ctx, c.RunID)
+	if err != nil || job == nil || job.Settlement != nil || (job.Financial != "UNPAID" && job.Financial != "AWAITING_PAYMENT") || job.Artifact != "DELETING" {
+		t.Fatal("cleanup-only state gate")
+	}
+	if controller.Fence.StopWriters(ctx, *job) != nil {
+		t.Fatal("original task and network absence unconfirmed")
+	}
+	cleanup := Cleanup{Repo: controller.Repo, Writers: controller.Fence, Objects: controller.Fence, Gate: Gate{Enabled: true}}
+	if err := cleanup.Complete(ctx, c.RunID); err != nil {
+		t.Fatal("supervised erasure unconfirmed", err)
+	}
+	job, err = controller.Repo.Get(ctx, c.RunID)
+	cap, capErr := controller.Repo.get(ctx, "CAPACITY")
+	if err != nil || capErr != nil || job == nil || job.Artifact != "ERASED" || job.Financial != "UNPAID" || avs(cap["used"]) != "0" {
+		t.Fatal("final retirement state differs")
+	}
+	t.Log("PRIVATE_SUPERVISED_CLEANUP_VERIFIED original_tasks_and_enis_absent=true bucket_absent=true erased=true capacity=0 no_dispatch=true no_payment=true flow_passed=false")
 }
