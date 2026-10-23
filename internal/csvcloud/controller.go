@@ -208,10 +208,17 @@ func (c Controller) FinishSynthetic(ctx context.Context) error {
 	if j.Artifact != "RESULT_PREPARED" || j.Financial != "AWAITING_PAYMENT" || j.Settlement != nil {
 		return ErrConflict
 	}
+	fence, e := privateDeliveryFence(ctx, c.Repo, c.Config.JobID)
+	if e != nil {
+		return e
+	}
 	n := copyJob(*j)
 	n.Version++
 	n.Artifact = "DELETING"
-	return c.Repo.Replace(ctx, *j, n)
+	if !validReplacement(*j, n) {
+		return ErrInvalid
+	}
+	return c.Repo.txn(ctx, []d.TransactWriteItem{c.Repo.versioned(*j, n), {ConditionCheck: fence}})
 }
 
 // validateBrokerBinding rejects controller restart metadata that does not match

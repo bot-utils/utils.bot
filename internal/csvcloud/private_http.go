@@ -104,7 +104,7 @@ func privateError(w http.ResponseWriter, err error) {
 	privateJSON(w, status, map[string]string{"error": code})
 }
 func privateBody(r *http.Request, dst any) error {
-	if r.Header.Get("Content-Type") != "application/json" || len(r.Header.Values("Content-Type")) != 1 || (r.Header.Get("Content-Encoding") != "" && r.Header.Get("Content-Encoding") != "identity") {
+	if r.Header.Get("Content-Type") != "application/json" || len(r.Header.Values("Content-Type")) != 1 || len(r.Header.Values("Content-Encoding")) > 1 || (r.Header.Get("Content-Encoding") != "" && r.Header.Get("Content-Encoding") != "identity") {
 		return ErrInvalid
 	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, csvwire.MaxHeader+1))
@@ -141,7 +141,7 @@ func (s PrivateHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("X-CSV-Payment-Mode", "synthetic-no-funds")
-	if r.URL.RawQuery != "" || r.URL.ForceQuery || r.URL.RawPath != "" || strings.Contains(r.URL.Path, "//") || r.Header.Get("Origin") != "" || len(r.Header.Values("Range")) != 0 || len(r.Header.Values("Payment-Signature")) != 0 {
+	if r.URL.RawQuery != "" || r.URL.ForceQuery || r.URL.RawPath != "" || strings.Contains(r.URL.Path, "//") || r.Header.Get("Origin") != "" || len(r.Header.Values("Range")) != 0 || len(r.Header.Values("If-Range")) != 0 || r.Method != http.MethodPost && (r.ContentLength != 0 || len(r.TransferEncoding) != 0) || len(r.Header.Values("Payment-Signature")) != 0 {
 		privateError(w, ErrInvalid)
 		return
 	}
