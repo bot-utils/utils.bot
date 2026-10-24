@@ -167,10 +167,11 @@ def canonical(value):
 
 def source_hash():
     root=Path(__file__).resolve().parents[1]
-    paths=[root/'go.mod',root/'benchmarks/Dockerfile.transform']
-    for directory in ('internal/tabular','internal/transformguard','cmd/csv-transform-trial'):
-        paths.extend(p for p in (root/directory).glob('*.go') if not p.name.endswith('_test.go'))
-    return shared.document_hash({p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(paths)})
+    repo=root.parent.parent
+    paths=[root/'go.mod',root/'benchmarks/Dockerfile.transform',repo/'go.mod']
+    for directory in (repo/'internal/csvtabular',repo/'internal/csvguard',root/'cmd/csv-transform-trial'):
+        paths.extend(p for p in directory.glob('*.go') if not p.name.endswith('_test.go'))
+    return shared.document_hash({p.relative_to(repo).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(paths)})
 
 
 def local_image(digest):

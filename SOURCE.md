@@ -253,3 +253,19 @@ remain quiet and are counted in the existing five-minute process-health record.
 Requests rejected by WAF or a load-balancer fixed response do not reach these
 application logs. Raw ALB logging stays disabled because its mandatory fields
 include customer data; CloudWatch transformations also retain original events.
+
+## Unreleased CSV source
+
+CSV is not publicly available. The source under `internal/csvcloud/`,
+`internal/csvtabular/` and `internal/csvwire/` contains disabled AWS/payment
+adapters, a strict tabular engine and an authenticated worker protocol. The
+prototype supports dedupe, select, join and a fixed set of column transforms.
+The current isolated worker enforces 8 MiB per input and 8 MiB CSV/gzip output;
+the upload adapter's 1 GiB bound does not establish processing at that size.
+
+`cmd/csv-private-worker/`, `cmd/csv-private-broker/` and
+`cmd/csv-private-verifier/` implement a private synthetic path. Source checks
+cover task/image/network bindings, independent signed absence evidence and
+bounded recovery. Local tests do not establish deployed AWS permissions,
+runtime isolation, deletion propagation or large-file performance. These
+components have no enabled public CSV routes and are not a production release.

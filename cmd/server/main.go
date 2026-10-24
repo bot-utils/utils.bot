@@ -13,6 +13,7 @@ import (
 
 	awslambda "github.com/aws/aws-sdk-go-v2/service/lambda"
 	"pdfservice/internal/awsenv"
+	"pdfservice/internal/csvcloud"
 	"pdfservice/internal/parser"
 	"pdfservice/internal/protocol"
 	"pdfservice/internal/server"
@@ -45,6 +46,30 @@ func main() {
 	}
 	worker := parser.Parser{Dir: os.Getenv("WORKER_DIR")}
 	service := server.NewWithConfig(resource, server.LambdaPay(client, alias), worker.Parse, paymentConfig)
+	switch os.Getenv("CSV_PRIVATE_ENABLED") {
+	case "", "0":
+		if os.Getenv("CSV_PRIVATE_CONFIG") != "" {
+			slog.Error("private CSV config requires explicit enable")
+			os.Exit(1)
+		}
+	case "1":
+		switch os.Getenv("CSV_PRIVATE_DIAGNOSTIC_ONLY") {
+		case "", "0":
+			service.PrivateCSV, err = csvcloud.NewPrivateAWSHTTP([]byte(os.Getenv("CSV_PRIVATE_CONFIG")), cfg)
+		case "1":
+			service.PrivateCSV, err = csvcloud.NewPrivateAWSReadOnlyProbe([]byte(os.Getenv("CSV_PRIVATE_CONFIG")), cfg)
+		default:
+			slog.Error("invalid private CSV diagnostic setting")
+			os.Exit(1)
+		}
+		if err != nil {
+			slog.Error("private CSV configuration invalid")
+			os.Exit(1)
+		}
+	default:
+		slog.Error("invalid private CSV setting")
+		os.Exit(1)
+	}
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

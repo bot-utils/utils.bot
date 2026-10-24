@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"utils.bot/csvprototype/internal/tabular"
+	"pdfservice/internal/csvtabular"
 )
 
 var imagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9./:_@-]{0,255}$`)

@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -26,6 +27,8 @@ import (
 type PayFunc func(context.Context, protocol.PaymentRequest) (protocol.PaymentResponse, error)
 type ParseFunc func(context.Context, []byte) (parser.Result, error)
 type Server struct {
+	// Optional private synthetic gateway; default nil preserves public routing.
+	PrivateCSV     http.Handler
 	Config         protocol.Config
 	Resource       string
 	Pay            PayFunc
@@ -78,6 +81,18 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.Handle("GET /", docs.NewWithConfig(s.Resource, s.Config))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Private job IDs and test-auth headers must not enter public request
+		// telemetry, discovery, payment middleware or PDF parser admission.
+		if s.PrivateCSV != nil && strings.HasPrefix(r.URL.Path, "/csv/") {
+			if s.Draining.Load() {
+				slog.Warn("private_csv_response", "status", 503, "stage", "ingress", "class", "draining")
+				w.Header().Set("Retry-After", "1")
+				write(w, 503, map[string]string{"error": "draining"})
+				return
+			}
+			s.PrivateCSV.ServeHTTP(w, r)
+			return
+		}
 		// ALB/container probes have no protected CloudFront-origin header. Keep
 		// them quiet; viewer health requests delivered by our protected origin
 		// get the same sanitized access record as other requests. This marker
