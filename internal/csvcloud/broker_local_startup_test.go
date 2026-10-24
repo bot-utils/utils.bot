@@ -59,8 +59,8 @@ func TestPrivateLocalBrokerStartupWithoutNetwork(t *testing.T) {
 		t.Fatal("local exit unconfirmed")
 	}
 	code, e := strconv.Atoi(strings.TrimSpace(string(out)))
-	if e != nil || code != 84 {
-		t.Fatalf("local startup exited at fixed stage %d, expected blocked metadata stage 84", code)
+	if e != nil || code != 90 {
+		t.Fatalf("local startup exited at fixed stage %d, expected blocked metadata transport stage 90", code)
 	}
 	out, e = run("logs", name)
 	if e != nil || len(out) != 0 {

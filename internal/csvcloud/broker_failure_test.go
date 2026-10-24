@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	d "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/smithy-go"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -44,7 +47,7 @@ func TestBrokerFailureStagesStopBeforeFurtherEffectsAndHideProviderText(t *testi
 	}{
 		{"invalid bootstrap", 200, 80, 0, `{}`},
 		{"invalid client config", 200, 81, 0, `{}`},
-		{"metadata access denied", 400, 84, 1, `{"__type":"AccessDeniedException","message":"` + secret + `"}`},
+		{"metadata access denied", 400, 88, 1, `{"__type":"AccessDeniedException","message":"` + secret + `"}`},
 		{"missing job", 200, 85, 1, `{}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -125,5 +128,28 @@ func TestBrokerTLSAndRetiredProcessingStagesDoNotWrite(t *testing.T) {
 				t.Fatal("unsafe stage or service effect", BrokerFailureExitCode(err), calls)
 			}
 		})
+	}
+}
+
+func TestMetadataExitClassesNeverExposeProviderText(t *testing.T) {
+	secret := "private-provider-secret /csv/jobs/private?token=secret"
+	for _, tc := range []struct {
+		err  error
+		code int
+	}{
+		{&smithy.GenericAPIError{Code: "AccessDeniedException", Message: secret}, 88},
+		{errors.New("credential " + secret), 89},
+		{&net.DNSError{Err: secret, Name: "private.invalid"}, 90},
+		{x509.UnknownAuthorityError{}, 91},
+		{&smithy.GenericAPIError{Code: "ResourceNotFoundException", Message: secret}, 92},
+		{&smithy.GenericAPIError{Code: "ThrottlingException", Message: secret}, 93},
+		{context.DeadlineExceeded, 94},
+		{&smithy.GenericAPIError{Code: "InternalFailure", Message: secret}, 95},
+		{errors.New(secret), 84},
+	} {
+		err := brokerFailure(84, tc.err)
+		if BrokerFailureExitCode(err) != tc.code || err.Error() != "csv_private_broker_failed" || strings.Contains(err.Error(), secret) {
+			t.Fatal("metadata failure privacy or classification changed")
+		}
 	}
 }

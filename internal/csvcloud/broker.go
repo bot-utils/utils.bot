@@ -70,10 +70,12 @@ func ProcessSyntheticBroker(ctx context.Context, b BrokerBootstrap, data aws.Con
 	if e != nil {
 		return brokerFailure(81, e)
 	}
-	repo := Repository{Client: clients.Dynamo, Table: b.Table, Gate: Gate{Enabled: true}}
+	metadata := &brokerMetadataObserver{DynamoAPI: clients.Dynamo}
+	repo := Repository{Client: metadata, Table: b.Table, Gate: Gate{Enabled: true}}
 	j, e := repo.Get(ctx, b.JobID)
+	repo.Client = clients.Dynamo
 	if e != nil {
-		return brokerFailure(84, e)
+		return brokerFailure(brokerMetadataExitCode(metadata.class), e)
 	}
 	if j == nil || j.Dispatch == nil || j.IntentBinding != b.Request.Binding() {
 		return brokerFailure(85, ErrInvalid)

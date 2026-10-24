@@ -31,9 +31,11 @@ func clients(cfg aws.Config) (AWSClients, error) {
 	if cfg.Region != Region || cfg.BaseEndpoint != nil || cfg.Credentials == nil || cfg.HTTPClient == nil {
 		return AWSClients{}, ErrInvalid
 	}
+	// Credentials can carry an account ID. Keep metadata on the exact regional
+	// host reviewed in the isolated DNS allowlist, regardless of that metadata.
 	cfg.RetryMaxAttempts = 1
 	cfg.ClientLogMode = 0
-	a := AWSClients{S3: s3.NewFromConfig(cfg), Dynamo: dynamodb.NewFromConfig(cfg), ECS: ecs.NewFromConfig(cfg), SQS: sqs.NewFromConfig(cfg)}
+	a := AWSClients{S3: s3.NewFromConfig(cfg), Dynamo: dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) { o.AccountIDEndpointMode = aws.AccountIDEndpointModeDisabled }), ECS: ecs.NewFromConfig(cfg), SQS: sqs.NewFromConfig(cfg)}
 	a.Parts = s3.NewPresignClient(a.S3)
 	return a, nil
 }
