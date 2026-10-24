@@ -53,9 +53,14 @@ func (p privateReadOnlyProbe) Status(ctx context.Context, id string) (PrivateSta
 		return PrivateStatus{}, ErrConflict
 	}
 	for _, object := range job.Inputs {
-		if _, err := b.upload(ctx, object); err != nil {
+		record, err := b.upload(ctx, object)
+		if err != nil {
 			privateDependencyFailure("admission_upload_metadata", err)
 			return PrivateStatus{}, err
+		}
+		if record.State != "OPEN" {
+			privateDependencyFailure("admission_upload_state", ErrIntegrity)
+			return PrivateStatus{}, ErrIntegrity
 		}
 	}
 	return PrivateStatus{JobID: id, State: "UPLOAD_METADATA_VERIFIED", Financial: "UNPAID", PaymentMode: "synthetic-no-funds"}, nil
