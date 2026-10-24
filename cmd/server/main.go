@@ -53,7 +53,15 @@ func main() {
 			os.Exit(1)
 		}
 	case "1":
-		service.PrivateCSV, err = csvcloud.NewPrivateAWSHTTP([]byte(os.Getenv("CSV_PRIVATE_CONFIG")), cfg)
+		switch os.Getenv("CSV_PRIVATE_DIAGNOSTIC_ONLY") {
+		case "", "0":
+			service.PrivateCSV, err = csvcloud.NewPrivateAWSHTTP([]byte(os.Getenv("CSV_PRIVATE_CONFIG")), cfg)
+		case "1":
+			service.PrivateCSV, err = csvcloud.NewPrivateAWSReadOnlyProbe([]byte(os.Getenv("CSV_PRIVATE_CONFIG")), cfg)
+		default:
+			slog.Error("invalid private CSV diagnostic setting")
+			os.Exit(1)
+		}
 		if err != nil {
 			slog.Error("private CSV configuration invalid")
 			os.Exit(1)
