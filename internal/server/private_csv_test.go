@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -38,10 +39,30 @@ func TestPrivateCSVIsOptionalAndBypassesPublicPaymentAndTelemetry(t *testing.T) 
 	if response.Code != 200 || calls != 1 {
 		t.Fatal("private route changed public discovery", response.Code)
 	}
+	logs.Reset()
 	service.Draining.Store(true)
 	response = httptest.NewRecorder()
-	service.Handler().ServeHTTP(response, httptest.NewRequest("GET", path, nil))
+	drainRequest := httptest.NewRequest("GET", path, nil)
+	drainRequest.Header.Set("X-CSV-Test-Key", "synthetic-sensitive-key")
+	service.Handler().ServeHTTP(response, drainRequest)
 	if response.Code != 503 || calls != 1 || response.Header().Get("Retry-After") != "1" || !strings.Contains(response.Body.String(), `"error":"draining"`) {
 		t.Fatal("private request admitted during drain")
 	}
+	var event map[string]any
+	if json.Unmarshal(logs.Bytes(), &event) != nil || len(event) != 6 || event["msg"] != "private_csv_response" || event["stage"] != "ingress" || event["class"] != "draining" || event["status"] != float64(503) {
+		t.Fatal("invalid private drain telemetry schema")
+	}
+	for key := range event {
+		switch key {
+		case "time", "level", "msg", "status", "stage", "class":
+		default:
+			t.Fatal("unexpected telemetry field")
+		}
+	}
+	for _, sensitive := range []string{path, strings.Repeat("a", 64), "synthetic-sensitive-key", "X-CSV-Test-Key"} {
+		if strings.Contains(logs.String(), sensitive) {
+			t.Fatal("sensitive telemetry")
+		}
+	}
+
 }
