@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"utils.bot/csvprototype/internal/tabular"
+	"pdfservice/internal/csvtabular"
 )
 
 // Claims are a synthetic HMAC format, deliberately not x402 or a spend authorization.

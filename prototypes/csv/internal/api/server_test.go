@@ -16,7 +16,7 @@ import (
 	"testing/iotest"
 	"time"
 
-	"utils.bot/csvprototype/internal/tabular"
+	"pdfservice/internal/csvtabular"
 )
 
 func direct(ctx context.Context, j Job) (tabular.Result, error) {

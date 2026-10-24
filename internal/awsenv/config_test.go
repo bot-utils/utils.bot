@@ -139,3 +139,28 @@ func TestServiceRequestsDoNotFollowRedirectsOrUseProxies(t *testing.T) {
 		t.Fatal("SDK configuration omitted hardened transport", err)
 	}
 }
+
+func TestLazyECSCredentialsSurviveBrokerEnvironmentClear(t *testing.T) {
+	environment := map[string]string{"AWS_REGION": "us-east-2", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI": "/v2/credentials/fixture"}
+	calls := 0
+	client := credentialClient()
+	client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.URL.Host != "169.254.170.2" || r.URL.Path != "/v2/credentials/fixture" {
+			t.Fatal("unexpected credential destination")
+		}
+		body := `{"AccessKeyId":"synthetic","SecretAccessKey":"test-only","Token":"test-only","Expiration":"` + time.Now().Add(time.Hour).UTC().Format(time.RFC3339) + `"}`
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})
+	cfg, err := loadWithClient(func(key string) string { return environment[key] }, client)
+	if err != nil {
+		t.Fatal("configuration failed")
+	}
+	clear(environment)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	credentials, err := cfg.Credentials.Retrieve(ctx)
+	if err != nil || credentials.AccessKeyID != "synthetic" || calls != 1 || cfg.Region != "us-east-2" {
+		t.Fatal("lazy provider depended on cleared environment")
+	}
+}
