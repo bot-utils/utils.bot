@@ -32,6 +32,7 @@ func (r Repository) get(ctx context.Context, pk string) (map[string]d.AttributeV
 	}
 	out, err := r.Client.GetItem(ctx, &dynamodb.GetItemInput{TableName: aws.String(r.Table), Key: key(pk), ConsistentRead: aws.Bool(true)}, func(o *dynamodb.Options) { o.RetryMaxAttempts = 1 })
 	if err != nil {
+		privateDependencyFailure("dynamodb_get", err)
 		return nil, ErrUnknown
 	}
 	return out.Item, nil

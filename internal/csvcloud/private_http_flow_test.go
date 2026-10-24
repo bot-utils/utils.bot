@@ -9,6 +9,7 @@ import (
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -139,14 +140,17 @@ func (a privateAPIClient) request(ctx context.Context, method, path string, body
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxMetadata+1))
-	if err != nil || len(data) > MaxMetadata || resp.StatusCode != want {
-		return ErrIntegrity
+	if err != nil || len(data) > MaxMetadata {
+		return fmt.Errorf("response_body: %w", ErrIntegrity)
+	}
+	if resp.StatusCode != want {
+		return fmt.Errorf("response_status_%d: %w", resp.StatusCode, ErrIntegrity)
 	}
 	if resp.Header.Get("X-CSV-Payment-Mode") != "synthetic-no-funds" {
-		return ErrIntegrity
+		return fmt.Errorf("response_payment_mode: %w", ErrIntegrity)
 	}
 	if out != nil && jsonwire.Decode(data, out, MaxMetadata) != nil {
-		return ErrIntegrity
+		return fmt.Errorf("response_decode: %w", ErrIntegrity)
 	}
 	return nil
 }
@@ -158,25 +162,28 @@ func (a privateAPIClient) admit(ctx context.Context, run string, f privateHTTPFi
 	}{f.Request.Options, f.Request.Files, "gzip"}
 	var admission PrivateAdmission
 	if e := a.request(ctx, "POST", "/csv/"+f.Request.Operation, body, 201, &admission); e != nil {
-		return admission, e
+		return admission, fmt.Errorf("admission_request: %w", e)
 	}
 	if admission.JobID != run || admission.Expires <= time.Now().Unix() || len(admission.Parts) != f.partCount() || admission.PaymentMode != "synthetic-no-funds" {
-		return admission, ErrIntegrity
+		return admission, fmt.Errorf("admission_binding: %w", ErrIntegrity)
 	}
 	var replay PrivateAdmission
 	if e := a.request(ctx, "POST", "/csv/"+f.Request.Operation, body, 201, &replay); e != nil || replay.JobID != admission.JobID || len(replay.Parts) != len(admission.Parts) {
-		return admission, ErrIntegrity
+		if e != nil {
+			return admission, fmt.Errorf("admission_replay: %w", e)
+		}
+		return admission, fmt.Errorf("admission_replay_binding: %w", ErrIntegrity)
 	}
 	// No test key, payer data or payment header is ever sent to an upload URL.
 	for _, part := range admission.Parts {
 		expected, offset, ok := f.part(part.Slot, part.Number)
 		u, e := url.Parse(part.URL)
 		if !ok || e != nil || u.Scheme != "https" || u.Host != storage.Bucket+".s3.us-east-2.amazonaws.com" || u.User != nil || u.Fragment != "" || u.RawPath != "" || !strings.HasPrefix(u.Path, "/inputs/"+run+"/") || !opaque(strings.TrimPrefix(u.Path, "/inputs/"+run+"/")) || u.Query().Get("partNumber") != strconv.Itoa(int(part.Number)) || u.Query().Get("uploadId") == "" {
-			return admission, ErrIntegrity
+			return admission, fmt.Errorf("upload_grant_url: %w", ErrIntegrity)
 		}
 		h := http.Header(part.Headers)
 		if h.Get("Content-Length") != strconv.FormatInt(expected.Bytes, 10) || h.Get("X-Amz-Checksum-Sha256") != checksum(expected.SHA256) || h.Get("X-CSV-Test-Key") != "" || h.Get("Payment-Signature") != "" {
-			return admission, ErrIntegrity
+			return admission, fmt.Errorf("upload_grant_headers: %w", ErrIntegrity)
 		}
 		source, e := f.open(part.Slot, offset, expected.Bytes)
 		if e != nil {
@@ -196,11 +203,11 @@ func (a privateAPIClient) admit(ctx context.Context, run string, f privateHTTPFi
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		resp.Body.Close()
 		if resp.StatusCode != 200 {
-			return admission, ErrIntegrity
+			return admission, fmt.Errorf("upload_status_%d: %w", resp.StatusCode, ErrIntegrity)
 		}
 	}
 	if e := a.request(ctx, "POST", "/csv/jobs/"+run+"/uploads/complete", struct{}{}, 202, nil); e != nil {
-		return admission, e
+		return admission, fmt.Errorf("upload_complete_signal: %w", e)
 	}
 	return admission, nil
 }

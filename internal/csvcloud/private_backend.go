@@ -132,6 +132,7 @@ func (b PrivateRunBackend) Begin(ctx context.Context, q csvwire.Request) (Privat
 	}
 	j, err := b.Repo.Get(ctx, b.RunID)
 	if err != nil {
+		privateDependencyFailure("admission_read", err)
 		return reply, err
 	}
 	if j == nil {
@@ -173,14 +174,17 @@ func (b PrivateRunBackend) Begin(ctx context.Context, q csvwire.Request) (Privat
 	for _, o := range j.Inputs {
 		r, e := b.upload(ctx, o)
 		if e != nil {
+			privateDependencyFailure("admission_upload_metadata", e)
 			return PrivateAdmission{}, e
 		}
 		if r.State != "OPEN" {
+			privateDependencyFailure("admission_upload_state", ErrIntegrity)
 			return PrivateAdmission{}, ErrUnknown
 		}
 		for _, part := range r.Upload.Parts {
 			grant, e := b.Objects.Grant(ctx, r.Upload, part.Number, time.Unix(b.now(), 0))
 			if e != nil {
+				privateDependencyFailure("admission_upload_grant", e)
 				return PrivateAdmission{}, e
 			}
 			reply.Parts = append(reply.Parts, PrivatePart{Slot: o.Slot, Number: part.Number, URL: grant.URL, Headers: grant.Headers})
