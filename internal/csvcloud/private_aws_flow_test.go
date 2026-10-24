@@ -245,6 +245,12 @@ func privateAWSFlow(t *testing.T, useHTTP bool) {
 	// Preflight before even the local one-shot claim. A missing cluster does
 	// not create a reservation, secret, upload or task definition.
 	requirePrivateAWSCluster(t, ctx, a.ECS)
+	if privateExecutablePreflight(verifierPath, verifierSHA) != nil {
+		t.Fatal("immutable verifier artifact preflight failed before one-shot claim")
+	}
+	if useHTTP && privateExecutablePreflight(os.Getenv("CSV_PRIVATE_COORDINATOR_PATH"), os.Getenv("CSV_PRIVATE_COORDINATOR_SHA")) != nil {
+		t.Fatal("immutable coordinator artifact preflight failed before one-shot claim")
+	}
 	claim, e := os.OpenFile(c.StatePath+".attempt", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if e != nil {
 		t.Fatal("one-shot local claim")

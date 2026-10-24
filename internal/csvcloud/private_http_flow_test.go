@@ -289,6 +289,21 @@ func (a privateAPIClient) verifyResult(ctx context.Context, j Job, f privateHTTP
 
 // The coordinator is a distinct executable with its own exact-run credentials.
 // It never inherits the test harness's operator profile or the API task role.
+// Check local artifacts before consuming a one-shot cloud-flow claim.
+func privateExecutablePreflight(path, hash string) error {
+	if !filepath.IsAbs(path) || !opaque(hash) {
+		return ErrInvalid
+	}
+	v := VerifierProcess{Executable: path, BinarySHA: hash}
+	binary, err := v.openBinary()
+	if err != nil {
+		return err
+	}
+	defer binary.Close()
+	_, err = v.execPath(binary)
+	return err
+}
+
 func startPrivateUploadConsumer(ctx context.Context, run PrivateAPIRun, verifier VerifierProcess) (<-chan error, error) {
 	path, sha := os.Getenv("CSV_PRIVATE_COORDINATOR_PATH"), os.Getenv("CSV_PRIVATE_COORDINATOR_SHA")
 	if !filepath.IsAbs(path) || !opaque(sha) {
