@@ -19,6 +19,7 @@ func TestPrivateDependencyDiagnosticsNeverLogProviderText(t *testing.T) {
 	t.Setenv("CSV_PRIVATE_ENABLED", "1")
 	privateDependencyFailure("dynamodb_get", &smithy.GenericAPIError{Code: "AccessDeniedException", Message: secret})
 	privateDependencyFailure("admission_read", errors.New(secret))
+	privateDependencyFailure(secret, errors.New(secret))
 	if strings.Contains(out.String(), secret) || strings.Contains(out.String(), "signed?") || !strings.Contains(out.String(), "access_denied") {
 		t.Fatal("unsafe or missing diagnostic class")
 	}

@@ -18,6 +18,11 @@ func privateDependencyFailure(stage string, err error) {
 	if os.Getenv("CSV_PRIVATE_ENABLED") != "1" {
 		return
 	}
+	switch stage {
+	case "dynamodb_get", "admission_read", "admission_upload_metadata", "admission_upload_state", "admission_upload_grant":
+	default:
+		stage = "unknown"
+	}
 	slog.Warn("private_csv_dependency_failure", "stage", stage, "class", privateFailureClass(err))
 }
 func privateFailureClass(err error) string {
