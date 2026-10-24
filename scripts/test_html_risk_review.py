@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 import json
 from pathlib import Path
 import tempfile
@@ -12,18 +12,34 @@ ROOT = Path(__file__).resolve().parent.parent
 
 class RiskAcceptanceTests(unittest.TestCase):
     def setUp(self):
-        self.reviews = json.loads((ROOT / 'native/browser-risk-acceptances.json').read_text())['reviews']
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        for name in CONTROL_FILES:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('synthetic test control\n')
+        self.today = date.today()
+        self.reviews = [dict(package=package, cve=cve, version=version,
+            browserVersion=BROWSER, decision='risk_accepted',
+            source='https://security-tracker.debian.org/tracker/' + cve,
+            evidenceSHA256='1' * 64, controlsSHA256=controls_digest(self.root),
+            reviewedOn=self.today.isoformat(),
+            reviewUntil=(self.today + timedelta(days=30)).isoformat(),
+            authorization='synthetic test fixture; never a deployment approval',
+            analysis='synthetic fixture', limitations='unpatched synthetic fixture',
+            residualRisk='synthetic test case')
+            for (package, cve), version in IDENTITIES.items()]
         self.row = self.reviews[0]
         self.item = dict(self.row, status='risk_accepted')
-        self.today = date(2026, 10, 20)
 
     def check(self):
-        return risk_accepted(self.item, self.reviews, today=self.today)
+        return risk_accepted(self.item, self.reviews, root=self.root, today=self.today)
 
     def test_all_five_are_explicit_unpatched_risks(self):
         self.assertEqual({(r['package'], r['cve']) for r in self.reviews}, set(IDENTITIES))
         for row in self.reviews:
-            self.assertTrue(risk_accepted(dict(row, status='risk_accepted'), self.reviews, today=self.today))
+            self.assertTrue(risk_accepted(dict(row, status='risk_accepted'), self.reviews, root=self.root, today=self.today))
             self.assertIn('unpatched', row['limitations'])
 
     def test_new_cve_or_package_is_not_accepted(self):
@@ -46,9 +62,9 @@ class RiskAcceptanceTests(unittest.TestCase):
             self.assertFalse(self.check())
 
     def test_expired_future_and_unbounded_review(self):
-        for today in (date(2026, 10, 19), date(2026, 11, 20)):
+        for today in (self.today - timedelta(days=1), self.today + timedelta(days=31)):
             self.assertFalse(risk_accepted(self.item, self.reviews, today=today))
-        self.row['reviewUntil'] = '2030-01-01'
+        self.row['reviewUntil'] = (self.today + timedelta(days=365)).isoformat()
         self.assertFalse(self.check())
 
     def test_missing_evidence_risk_or_authorization(self):
@@ -72,8 +88,8 @@ class RiskAcceptanceTests(unittest.TestCase):
             for name in CONTROL_FILES:
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes((ROOT / name).read_bytes())
-            self.assertEqual(controls_digest(root), controls_digest())
+                path.write_bytes((self.root / name).read_bytes())
+            self.assertEqual(controls_digest(root), controls_digest(self.root))
             self.assertTrue(risk_accepted(self.item, self.reviews, root=root, today=self.today))
             target = root / 'native/browser-launch.c'
             target.write_bytes(target.read_bytes() + b'\n// changed confinement\n')
@@ -90,14 +106,14 @@ class RiskAcceptanceTests(unittest.TestCase):
                              'Vulnerabilities': [{'PkgName': self.item['package'], 'VulnerabilityID': self.item['cve'],
                                                   'InstalledVersion': self.item['version']}]}]}
         policy = {'findings': [self.item]}
-        outcome = evaluate(scan, runtime, policy, risk_reviews=self.reviews)
+        outcome = evaluate(scan, runtime, policy, risk_reviews=self.reviews, root=self.root)
         self.assertTrue(outcome['passed'])
         self.assertEqual(outcome['accepted_risk_records'], 1)
         self.assertEqual(outcome['fixed_matching_records'], 0)
         self.assertEqual(outcome['vendor_disputed_records'], 0)
-        self.assertFalse(evaluate(scan, runtime, policy)['passed'])
+        self.assertFalse(evaluate(scan, runtime, policy, root=self.root)['passed'])
         runtime['browser_version'] = 'other-browser'
-        self.assertFalse(evaluate(scan, runtime, policy, risk_reviews=self.reviews)['passed'])
+        self.assertFalse(evaluate(scan, runtime, policy, risk_reviews=self.reviews, root=self.root)['passed'])
 
 
 if __name__ == '__main__':

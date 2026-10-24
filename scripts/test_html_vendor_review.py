@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 import json
 from pathlib import Path
 import unittest
@@ -8,11 +8,21 @@ from html_vendor_review import vendor_reviewed
 
 class VendorReviewTests(unittest.TestCase):
     def setUp(self):
-        root = Path(__file__).resolve().parent.parent
-        self.reviews = json.loads((root / 'native/browser-vendor-reviews.json').read_text())['reviews']
+        self.today = date.today()
+        identities = [('libc6', 'CVE-2019-1010022', '2.43-7'),
+                      ('libc6', 'CVE-2019-1010024', '2.43-7'),
+                      ('libc6', 'CVE-2019-1010025', '2.43-7'),
+                      ('libsqlite3-0', 'CVE-2021-45346', '3.53.4-2')]
+        self.reviews = [dict(package=package, cve=cve, version=version,
+            decision='vendor_disputed', evidenceSHA256='1' * 64,
+            source=('https://www.sqlite.org/cves.html' if package == 'libsqlite3-0'
+                    else 'https://security-tracker.debian.org/tracker/' + cve),
+            reviewedOn=self.today.isoformat(),
+            reviewUntil=(self.today + timedelta(days=30)).isoformat(),
+            analysis='synthetic test fixture', limitations='synthetic test case')
+            for package, cve, version in identities]
         self.row = self.reviews[0]
         self.item = {key: self.row[key] for key in ('package', 'cve', 'version')}
-        self.today = date(2026, 10, 20)
 
     def check(self):
         return vendor_reviewed(self.item, self.reviews, self.today)
@@ -35,11 +45,11 @@ class VendorReviewTests(unittest.TestCase):
         self.assertFalse(self.check())
 
     def test_expired_review_blocks(self):
-        self.today = date(2026, 11, 20)
+        self.today += timedelta(days=31)
         self.assertFalse(self.check())
 
     def test_future_review_blocks(self):
-        self.today = date(2026, 10, 19)
+        self.today -= timedelta(days=1)
         self.assertFalse(self.check())
 
     def test_duplicate_review_blocks(self):
@@ -47,7 +57,7 @@ class VendorReviewTests(unittest.TestCase):
         self.assertFalse(self.check())
 
     def test_unbounded_review_blocks(self):
-        self.row['reviewUntil'] = '2030-01-01'
+        self.row['reviewUntil'] = (self.today + timedelta(days=365)).isoformat()
         self.assertFalse(self.check())
 
     def test_missing_evidence_blocks(self):

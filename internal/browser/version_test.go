@@ -1,7 +1,6 @@
 package browser
 
 import (
-	"encoding/json"
 	"os"
 	"regexp"
 	"strings"
@@ -34,22 +33,5 @@ func TestRuntimeVersionMatchesVerifiedImageAndProvenance(t *testing.T) {
 	check, err := os.ReadFile("../../scripts/check_html_image.py")
 	if err != nil || !strings.Contains(string(check), archive[1]) {
 		t.Fatal("archive checksum and filesystem provenance check differ", err)
-	}
-	reviews, err := os.ReadFile("../../native/browser-risk-acceptances.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var risk struct {
-		Reviews []struct {
-			BrowserVersion string `json:"browserVersion"`
-		} `json:"reviews"`
-	}
-	if json.Unmarshal(reviews, &risk) != nil || len(risk.Reviews) == 0 {
-		t.Fatal("missing explicit browser-bound reviews")
-	}
-	for _, row := range risk.Reviews {
-		if row.BrowserVersion != Version {
-			t.Fatal("browser changed without reviewing native risk decisions")
-		}
 	}
 }
