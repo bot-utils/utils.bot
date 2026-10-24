@@ -85,7 +85,8 @@ func (s *Server) Handler() http.Handler {
 		// telemetry, discovery, payment middleware or PDF parser admission.
 		if s.PrivateCSV != nil && strings.HasPrefix(r.URL.Path, "/csv/") {
 			if s.Draining.Load() {
-				write(w, 503, map[string]string{"error": "unavailable"})
+				w.Header().Set("Retry-After", "1")
+				write(w, 503, map[string]string{"error": "draining"})
 				return
 			}
 			s.PrivateCSV.ServeHTTP(w, r)

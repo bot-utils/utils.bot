@@ -9,6 +9,7 @@ import (
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -99,6 +100,8 @@ func TestPrivateSmallHTTPFixtureOracles(t *testing.T) {
 	}
 }
 
+var errPrivateAPIDraining = errors.New("private_csv_draining")
+
 type privateAPIClient struct {
 	HTTP aws.HTTPClient
 	Key  string
@@ -144,6 +147,9 @@ func (a privateAPIClient) request(ctx context.Context, method, path string, body
 		return fmt.Errorf("response_body: %w", ErrIntegrity)
 	}
 	if resp.StatusCode != want {
+		if resp.StatusCode == 503 && resp.Header.Get("Retry-After") == "1" && bytes.Equal(bytes.TrimSpace(data), []byte(`{"error":"draining"}`)) {
+			return errPrivateAPIDraining
+		}
 		return fmt.Errorf("response_status_%d: %w", resp.StatusCode, ErrIntegrity)
 	}
 	if resp.Header.Get("X-CSV-Payment-Mode") != "synthetic-no-funds" {
@@ -154,6 +160,36 @@ func (a privateAPIClient) request(ctx context.Context, method, path string, body
 	}
 	return nil
 }
+
+// Retry only an explicit pre-backend drain rejection of a replay whose first
+// admission already returned 201. First admission, completion, uploads, worker
+// starts and payments are never retried here. Generic 503s remain failures.
+func (a privateAPIClient) confirmedAdmissionReplay(ctx context.Context, path string, body any, known PrivateAdmission, replay *PrivateAdmission) error {
+	if !opaque(known.JobID) || known.Expires <= time.Now().Unix() || len(known.Parts) == 0 {
+		return ErrInvalid
+	}
+	for attempt := 0; attempt < 3; attempt++ {
+		err := a.request(ctx, "POST", path, body, 201, replay)
+		if !errors.Is(err, errPrivateAPIDraining) || attempt == 2 {
+			return err
+		}
+		if known.Expires <= time.Now().Unix()+1 {
+			return ErrConflict
+		}
+		if client, ok := a.HTTP.(interface{ CloseIdleConnections() }); ok {
+			client.CloseIdleConnections()
+		}
+		timer := time.NewTimer(time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return ErrUnknown
+}
+
 func (a privateAPIClient) admit(ctx context.Context, run string, f privateHTTPFixtureData, storage Storage) (PrivateAdmission, error) {
 	body := struct {
 		Options  json.RawMessage `json:"options"`
@@ -168,7 +204,7 @@ func (a privateAPIClient) admit(ctx context.Context, run string, f privateHTTPFi
 		return admission, fmt.Errorf("admission_binding: %w", ErrIntegrity)
 	}
 	var replay PrivateAdmission
-	if e := a.request(ctx, "POST", "/csv/"+f.Request.Operation, body, 201, &replay); e != nil || replay.JobID != admission.JobID || len(replay.Parts) != len(admission.Parts) {
+	if e := a.confirmedAdmissionReplay(ctx, "/csv/"+f.Request.Operation, body, admission, &replay); e != nil || replay.JobID != admission.JobID || len(replay.Parts) != len(admission.Parts) {
 		if e != nil {
 			return admission, fmt.Errorf("admission_replay: %w", e)
 		}

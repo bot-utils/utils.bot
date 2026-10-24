@@ -41,7 +41,7 @@ func TestPrivateCSVIsOptionalAndBypassesPublicPaymentAndTelemetry(t *testing.T) 
 	service.Draining.Store(true)
 	response = httptest.NewRecorder()
 	service.Handler().ServeHTTP(response, httptest.NewRequest("GET", path, nil))
-	if response.Code != 503 || calls != 1 {
+	if response.Code != 503 || calls != 1 || response.Header().Get("Retry-After") != "1" || !strings.Contains(response.Body.String(), `"error":"draining"`) {
 		t.Fatal("private request admitted during drain")
 	}
 }
