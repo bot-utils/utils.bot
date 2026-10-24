@@ -1,24 +1,39 @@
-# Public source allowlist. Operator files stay local.
+# Ignore everything except reviewed application source and required inputs.
 *
 !*/
-# Application, native and test source.
-!*.c
-!*.cc
-!*.css
-!*.gclient
-!*.gn
-!*.go
-!*.h
-!*.html
-!*.inc
-!*.js
-!*.mts
-!*.patch
-!*.py
-!*.sh
-!*.sources
-!*.svg
-# Required build inputs, public service assets and legal notices.
+# Application code, public service assets and tests.
+!/cmd/html-microvm/*.go
+!/cmd/html-worker/*.go
+!/cmd/html/*.go
+!/cmd/native-test/*.go
+!/cmd/payment/*.go
+!/cmd/server/*.go
+!/cmd/threat-update/*.go
+!/internal/awsenv/*.go
+!/internal/browser/*.go
+!/internal/cdp/*.go
+!/internal/docs/*.go
+!/internal/docs/assets/*.css
+!/internal/docs/assets/*.js
+!/internal/docs/assets/*.svg
+!/internal/docs/templates/*.html
+!/internal/edge/*.go
+!/internal/edge/*.js
+!/internal/htmllimits/*.go
+!/internal/htmlrender/*.go
+!/internal/htmltool/*.go
+!/internal/jsonwire/*.go
+!/internal/microvm/*.go
+!/internal/parser/*.go
+!/internal/paths/*.go
+!/internal/payment/*.go
+!/internal/protocol/*.go
+!/internal/server/*.go
+!/internal/serviceinfo/*.go
+!/internal/staticsite/*.go
+!/internal/staticsite/*.js
+!/internal/telemetry/*.go
+# Exact build inputs, synthetic fixtures and legal notices.
 !/.dockerignore
 !/.gitignore
 !/COPYRIGHT
@@ -29,8 +44,6 @@
 !/README.md
 !/SOURCE.md
 !/THIRD_PARTY.md
-!/cmd/csv-private-broker/Dockerfile
-!/cmd/csv-private-worker/Dockerfile
 !/go.mod
 !/go.sum
 !/internal/docs/assets/SWAGGER-UI-LICENSE
@@ -49,7 +62,12 @@
 !/licenses/poppler/COPYING
 !/licenses/poppler/COPYING3
 !/licenses/poppler/STREAM-CC-NOTICE.txt
+!/native/browser-apt.sources
+!/native/browser-launch.c
 !/native/browser-libraries.json
+!/native/browser-libraries.py
+!/native/browser-native-test.c
+!/native/browser-runtime.py
 !/native/licenses/MPL-2.0.txt
 !/native/licenses/PROVENANCE.json
 !/native/licenses/compiler-rt-LICENSE.TXT
@@ -59,23 +77,36 @@
 !/native/licenses/libcxxabi-LICENSE.TXT
 !/native/licenses/libunwind-LICENSE.TXT
 !/native/licenses/musl-COPYRIGHT
-!/prototypes/csv/.gitignore
-!/prototypes/csv/Dockerfile
-!/prototypes/csv/go.mod
-!/prototypes/csv/go.sum
+!/native/patches/freetype-f3ca71c.patch
+!/native/patches/glib-replace-exclusive.patch
+!/native/patches/pdfium-disable-raster-codecs.patch
+!/native/patches/pdfium-musl-build.patch
+!/native/patches/pdfium-no-remote-build.patch
+!/native/patches/poppler-disable-jbig2.patch
+!/native/patches/zlib-df84af2.patch
+!/native/pdfium-args.gn
+!/native/pdfium-musl-args.gn
+!/native/pdfium-musl-toolchain.gn
+!/native/pdfium-provenance.py
+!/native/pdfium.gclient
+!/native/runtime-check.cc
+!/native/warmup.inc
+!/native/worker.cc
+!/scripts/quickstart-offline.mts
+!/scripts/runtime-rootfs.py
+!/scripts/test_quickstart.py
 !/testdata/bad.pdf
 !/testdata/different.pdf
 !/testdata/hello.pdf
-# Private tooling and generated data remain excluded even when code.
+# Private material stays ignored, including inside source directories.
 /infra/
-/prototypes/csv/benchmarks/
-/cmd/browser-bench/
-/cmd/browser-probe/
-/cmd/microvm-probe/
-/cmd/private-edge-check/
-/build/
-/reports/
+/prototypes/
 /publication/
+/reports/
+/build/
+/logs/
+/backups/
+/cdk.out/
 **/__pycache__/
 **/*.pyc
 **/.env*
@@ -87,3 +118,6 @@
 **/.ssh/
 **/.codex/
 **/.agents/
+**/AGENTS.md
+**/CLAUDE.md
+**/node_modules/
