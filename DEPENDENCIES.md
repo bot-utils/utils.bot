@@ -1,9 +1,8 @@
 # Dependency and distribution review
 
-The Go application dependencies are pinned in `go.mod` and `go.sum`. When the
-optional infrastructure source is included, it has separate Go and Node
-dependency manifests. Consult the exact dependency versions and their own
-license files; the list below is not a complete license inventory.
+The Go application dependencies are pinned in `go.mod` and `go.sum`. Consult
+the exact dependency versions and their own license files; the list below is
+not a complete license inventory.
 
 - PDFium supplies a native PDF engine; its source and bundled components have
   their own copyright and notice requirements. The pinned source tree license
@@ -21,7 +20,7 @@ license files; the list below is not a complete license inventory.
   module; it reuses the existing SDK core, signing and transport packages. No
   browser automation framework, JavaScript runtime package or new general
   purpose HTTP/JSON dependency is introduced.
-- The AWS SDK, CDK and Swagger UI include components distributed under Apache
+- The AWS SDK and Swagger UI include components distributed under Apache
   2.0; preserve the required license and notice materials.
 - Native runtime inputs also include Expat, FreeType, zlib, Fontconfig,
   DejaVu fonts, musl and LLVM runtime libraries. The production image is a

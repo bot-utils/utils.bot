@@ -40,15 +40,6 @@ COPY --from=native-test --chmod=0444 /tmp/native-regressions-passed /opt/utils/n
 ENV HOME=/tmp LANG=C.UTF-8
 USER 10001:10001
 
-FROM browser-base AS benchmark
-COPY --chmod=0555 build/browser-bench /opt/utils/browser-bench
-ENTRYPOINT ["/opt/utils/browser-bench"]
-
-# IAM-only synthetic Lambda probe; no customer URLs or payment calls.
-FROM browser-base AS probe
-COPY --chmod=0555 build/browser-probe/bootstrap /opt/utils/bootstrap
-ENTRYPOINT ["/opt/utils/bootstrap"]
-
 # One-shot HTTP worker for the separate Lambda MicroVMs service.
 FROM browser-base AS microvm
 COPY --chmod=0555 build/html-microvm/bootstrap /opt/utils/bootstrap

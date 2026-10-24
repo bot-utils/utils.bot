@@ -99,32 +99,16 @@ ENV PORT=8080 WORKER_DIR=/app
 EXPOSE 8080
 ENTRYPOINT ["/app/server"]
 
-FROM go-build AS private-check-build
-COPY cmd/private-edge-check ./cmd/private-edge-check
-RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /private-edge-check ./cmd/private-edge-check
-
-FROM runtime AS private-edge-check
-COPY --from=private-check-build /private-edge-check /validation/private-edge-check
-ENTRYPOINT ["/validation/private-edge-check", "-run-server"]
-
 FROM native-workers AS sandbox-test
 COPY native/runtime-check.cc /build/
 RUN clang++ -fuse-ld=lld --rtlib=compiler-rt --unwindlib=libunwind -std=c++23 -stdlib=libc++ -O2 /build/runtime-check.cc -I/opt/expat/include -I/opt/freetype/include/freetype2 -I/opt/zlib/include -L/opt/expat/lib -L/opt/freetype/lib -L/opt/zlib/lib -lexpat -lfreetype -lz -o /runtime-check
 USER 10001:10001
 ENTRYPOINT ["/worker-test"]
 
-FROM runtime-files AS trace
-USER root
-RUN apk add --no-cache strace
-USER 10001:10001
-ENTRYPOINT ["/usr/bin/strace", "-f", "-qq"]
 FROM go-build AS test-build
 COPY cmd/native-test ./cmd/native-test
 COPY testdata /testdata
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go test -c -o /parser.test ./internal/parser && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go test -c -o /server.test ./internal/server && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go test -c -o /supervisor.test ./cmd/server && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o /native-test ./cmd/native-test
-
-FROM scratch AS context-audit
-COPY . /context
 
 FROM runtime AS integration-test
 COPY --from=test-build /native-test /app/native-test

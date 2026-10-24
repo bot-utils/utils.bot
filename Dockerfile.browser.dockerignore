@@ -6,11 +6,6 @@ native/**
 !native/browser-runtime.py
 !build/
 build/**
-!build/browser-bench
-!build/browser-probe/
-build/browser-probe/**
-!build/browser-probe/bootstrap
-
 !build/html-microvm/
 build/html-microvm/**
 !build/html-microvm/bootstrap

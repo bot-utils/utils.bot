@@ -1,11 +1,7 @@
 # Source review guide
 
-This repository contains application and native source, tests, build inputs,
-public service assets and third-party notices. Deployment configuration,
-operational records and release approvals are maintained privately.
-
-The service and API reference are at https://utils.bot/ and
-https://utils.bot/docs. CSV code is an unreleased candidate.
+Source and tests for PDF text extraction and URL-to-Markdown are included with
+required build inputs, public API assets and third-party notices.
 
 Use the Go version in `go.mod`. Local unit tests run with:
 
@@ -13,10 +9,8 @@ Use the Go version in `go.mod`. Local unit tests run with:
 go test ./cmd/... ./internal/...
 ```
 
-Build and release checks require their separately reviewed inputs. Missing
-private approval or scan inputs block release; this source snapshot is not a
-deployment authorization. Test fixtures and fixture signing keys are synthetic
-and must never be funded or reused for real credentials.
+Test fixtures and fixture signing keys are synthetic and must never be funded
+or reused as real credentials.
 
 Original application code is all rights reserved. GitHub platform viewing and
 forking rights and applicable legal exceptions remain. Auditors seeking

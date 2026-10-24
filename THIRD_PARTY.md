@@ -39,7 +39,7 @@ successful build alone does not establish redistribution compliance.
 
 These notices do not alter rights granted by any third-party license.
 
-## URL-to-Markdown branch
+## URL-to-Markdown
 
 The Go HTML tokenizer is `golang.org/x/net/html` v0.61.0 (BSD-3-Clause);
 its license is retained in `licenses/html/X-NET-LICENSE.txt`. Go/AWS module
@@ -76,6 +76,4 @@ exact image's notices and corresponding-source obligations before distributing
 a binary image; the original-code copyright notice does not apply to those
 components. A successful OS-package scan alone does not cover the browser's
 bundled libraries; also review the pinned browser against upstream security
-releases. The optional local Docker test uses a pinned Playwright seccomp
-profile under Apache-2.0, retaining its license in the ignored build folder;
-Playwright itself is not installed in the worker.
+releases.
