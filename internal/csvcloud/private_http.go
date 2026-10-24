@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/netip"
 	"strconv"
@@ -100,6 +101,9 @@ func privateError(w http.ResponseWriter, err error) {
 		if errors.As(err, &t) {
 			status, code = t.Status, t.Code
 		}
+	}
+	if status >= 500 {
+		slog.Warn("private_csv_response", "status", status, "stage", "response", "class", privateFailureClass(err))
 	}
 	privateJSON(w, status, map[string]string{"error": code})
 }
