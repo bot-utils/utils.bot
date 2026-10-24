@@ -49,17 +49,18 @@ func ProcessSyntheticBroker(ctx context.Context, b BrokerBootstrap, data aws.Con
 	now := time.Now()
 	raw, e := json.Marshal(b)
 	if e != nil {
-		return ErrInvalid
+		return brokerFailure(80, ErrInvalid)
 	}
+	defer clear(raw)
 	if _, e = DecodeBroker(raw, now); e != nil {
-		return e
+		return brokerFailure(80, e)
 	}
 	ctx, cancel := context.WithDeadline(ctx, time.Unix(b.Until, 0))
 	defer cancel()
 	if b.Request.Version == 2 {
 		client, ok := data.HTTPClient.(*http.Client)
 		if !ok {
-			return ErrInvalid
+			return brokerFailure(81, ErrInvalid)
 		}
 		copied := *client
 		copied.Timeout = 300 * time.Second
@@ -67,16 +68,19 @@ func ProcessSyntheticBroker(ctx context.Context, b BrokerBootstrap, data aws.Con
 	}
 	clients, e := clients(data)
 	if e != nil {
-		return e
+		return brokerFailure(81, e)
 	}
 	repo := Repository{Client: clients.Dynamo, Table: b.Table, Gate: Gate{Enabled: true}}
 	j, e := repo.Get(ctx, b.JobID)
-	if e != nil || j == nil || j.Dispatch == nil || j.IntentBinding != b.Request.Binding() {
-		return ErrInvalid
+	if e != nil {
+		return brokerFailure(84, e)
+	}
+	if j == nil || j.Dispatch == nil || j.IntentBinding != b.Request.Binding() {
+		return brokerFailure(85, ErrInvalid)
 	}
 	tlsConfig, e := csvwire.ClientTLS(b.Identity, now)
 	if e != nil {
-		return ErrInvalid
+		return brokerFailure(86, ErrInvalid)
 	}
 
 	pub, _ := base64.StdEncoding.DecodeString(b.NetworkPublicKey)
@@ -89,5 +93,8 @@ func ProcessSyntheticBroker(ctx context.Context, b BrokerBootstrap, data aws.Con
 			return f, f, e
 		}
 	}
-	return processor.Process(ctx, b.JobID, b.Request)
+	if err := processor.Process(ctx, b.JobID, b.Request); err != nil {
+		return brokerFailure(87, err)
+	}
+	return nil
 }
